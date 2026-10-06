@@ -1,0 +1,65 @@
+# Dependências
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+dist-ssr/
+*.tsbuildinfo
+src-tauri/target/
+src-tauri/gen/
+src-tauri/recursos/node.exe
+src-tauri/recursos/ponte.mjs
+
+# Documentos internos
+planejamento/
+PENDENCIAS.md
+IDEIAS.md
+
+# Vídeo e material de divulgação
+niko-video/
+out/
+
+# Ferramentas e configurações locais de assistentes
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurf/
+.windsurfrules
+.copilot/
+.github/copilot-instructions.md
+.aider*
+.continue/
+.codex/
+
+# Segredos e chaves
+.env
+.env.*
+!.env.exemplo
+*.key
+*.pem
+*.pfx
+*.p12
+*.sig
+*.keystore
+credenciais*.json
+
+# Dados locais
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Editores e sistema
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

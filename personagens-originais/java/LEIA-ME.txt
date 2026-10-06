@@ -1,0 +1,6 @@
+Coloque aqui os 8 SVGs animados do Java, com estes nomes:
+ocioso.svg, ouvindo.svg, pensando.svg, escrevendo.svg, sucesso.svg, alerta.svg, erro.svg, dormindo.svg
+
+Depois rode: pnpm personagens
+O script copia para public/personagens/java com o mesmo enquadramento dos outros.
+Enquanto os arquivos nao existirem, o Niko mostra um circulo azul com a letra J.

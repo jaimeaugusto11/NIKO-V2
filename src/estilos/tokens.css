@@ -1,0 +1,84 @@
+:root {
+  --fonte-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --fonte-texto: "Inter", system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+
+  --esp-1: 4px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 16px;
+  --esp-5: 24px;
+  --esp-6: 32px;
+  --esp-7: 48px;
+
+  --raio-cartao: 12px;
+  --raio-campo: 10px;
+  --raio-pilula: 999px;
+
+  --altura-campo: 36px;
+  --altura-botao: 36px;
+  --altura-botao-pequeno: 28px;
+
+  --sucesso: #2f9e6b;
+  --alerta: #d9922b;
+  --erro: #d84b4b;
+  --tonto: #a855f7;
+
+  --cor-organizador: #1c1c1e;
+  --cor-tutor: #6e1f7a;
+  --cor-operador: #ff5a5a;
+
+  --sombra-menu: 0 8px 24px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --sombra-janela: 0 24px 64px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
+
+  --curva-fechar: cubic-bezier(0.45, 0, 0.2, 1);
+  --curva-entrar: cubic-bezier(0.3, 1.2, 0.4, 1);
+  --curva-lista: cubic-bezier(0.3, 0.9, 0.3, 1);
+
+  --escala: 1;
+}
+
+[data-tema="claro"] {
+  color-scheme: light;
+  --fundo: #f6f6f5;
+  --superficie: #ffffff;
+  --superficie-2: #f1f1f0;
+  --borda: #e7e7e5;
+  --borda-forte: #d6d6d3;
+  --texto: #111111;
+  --texto-2: #6b6b6b;
+  --texto-3: #9a9a98;
+  --primario: #111111;
+  --primario-texto: #ffffff;
+  --sucesso: #2f9e6b;
+  --alerta: #d9922b;
+  --erro: #d84b4b;
+  --foco: rgba(124, 92, 224, 0.35);
+}
+
+[data-tema="escuro"] {
+  color-scheme: dark;
+  --fundo: #0e0e10;
+  --superficie: #161618;
+  --superficie-2: #1d1d20;
+  --borda: #2a2a2e;
+  --borda-forte: #3a3a40;
+  --texto: #f2f2f2;
+  --texto-2: #9a9aa0;
+  --texto-3: #6b6b72;
+  --primario: #f2f2f2;
+  --primario-texto: #111111;
+  --sucesso: #3dd68c;
+  --alerta: #f5b651;
+  --erro: #ff6b6b;
+  --foco: rgba(167, 139, 250, 0.4);
+  --cor-organizador: #e9e9ec;
+}
+
+[data-tema="claro"][data-paleta="areia"] { --fundo: #f5f1ea; --superficie: #fffdf9; --superficie-2: #efe9df; --borda: #e4dccf; }
+[data-tema="escuro"][data-paleta="areia"] { --fundo: #14110d; --superficie: #1c1814; --superficie-2: #241f1a; --borda: #352e26; }
+[data-tema="claro"][data-paleta="grafite"] { --fundo: #eeeff1; --superficie: #fbfbfc; --superficie-2: #e6e7ea; --borda: #d9dbdf; }
+[data-tema="escuro"][data-paleta="grafite"] { --fundo: #0b0c0e; --superficie: #131418; --superficie-2: #1a1c21; --borda: #282b31; }
+[data-tema="claro"][data-paleta="floresta"] { --fundo: #f1f4f0; --superficie: #fcfdfb; --superficie-2: #e8ede6; --borda: #d9e1d6; }
+[data-tema="escuro"][data-paleta="floresta"] { --fundo: #0c110d; --superficie: #131a14; --superficie-2: #1a231b; --borda: #27332a; }
+[data-tema="claro"][data-paleta="oceano"] { --fundo: #eff3f6; --superficie: #fbfdfe; --superficie-2: #e5ecf1; --borda: #d4dee6; }
+[data-tema="escuro"][data-paleta="oceano"] { --fundo: #0a0f13; --superficie: #11181e; --superficie-2: #172129; --borda: #24323d; }

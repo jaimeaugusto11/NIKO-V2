@@ -1,0 +1,113 @@
+.ilha-etapas {
+  position: relative;
+  display: block;
+  height: 40px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 0 0 40px;
+  text-align: left;
+}
+
+.ilha-etapas-compacta {
+  height: 24px;
+  flex: 1 1 auto;
+}
+
+.ilha-etapa {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  font-size: 12px;
+  transform-origin: left center;
+}
+
+.ilha-etapas-compacta .ilha-etapa {
+  height: 12px;
+  font-size: 10.5px;
+}
+
+.ilha-etapa svg {
+  flex-shrink: 0;
+}
+
+.ilha-etapa-anterior {
+  color: var(--i-dim, var(--texto-2));
+}
+
+.ilha-personagem-espaco {
+  display: block;
+  flex-shrink: 0;
+}
+
+.ilha-personagem-continuo {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 70px;
+  height: 70px;
+  z-index: 3;
+  transform-origin: center;
+}
+
+.ilha-personagem-flutuante {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ilha-personagem-flutuante[data-flutuando] {
+  animation: ilha-flutuar 3.2s ease-in-out infinite;
+}
+
+@keyframes ilha-flutuar {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-3deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(3deg);
+  }
+}
+
+.ilha-capa-com-personagem {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.ilha-capa-personagem {
+  position: absolute;
+  right: -18px;
+  bottom: -8px;
+}
+
+.ilha-arquivo-em-voo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  width: 130px;
+  height: 32px;
+  pointer-events: none;
+}
+
+.ilha-arquivo-em-voo > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: #252629;
+  color: #f1f2f4;
+  font-size: 11px;
+  transform: translate(-50%, -50%);
+}
+
+.ilha-arquivo-em-voo svg {
+  flex-shrink: 0;
+}
