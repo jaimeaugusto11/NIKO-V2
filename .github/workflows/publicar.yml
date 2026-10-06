@@ -1,0 +1,89 @@
+name: Publicar produção
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: producao-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: windows-latest
+    steps:
+      - name: Obter o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Preparar o Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache do Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Construir a versão seguinte
+        shell: bash
+        env:
+          NIKO_NOTAS: ${{ github.event.head_commit.message }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm lancar --automatica
+
+      - name: Publicar a release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          manifesto="src-tauri/target/release/bundle/nsis/latest.json"
+          versao=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$manifesto")
+          node -e "require('fs').writeFileSync('notas-release.txt', JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).notes)" "$manifesto"
+          gh release create "v${versao}" \
+            "src-tauri/target/release/bundle/nsis/Niko_${versao}_x64-setup.exe" \
+            "$manifesto" \
+            --repo jaimeaugusto11/NIKO-V2 \
+            --title "Niko ${versao}" \
+            --notes-file notas-release.txt \
+            --target "${GITHUB_SHA}"
+          echo "versao=${versao}" >> "$GITHUB_OUTPUT"
+
+      - name: Guardar a versão no repositório
+        shell: bash
+        env:
+          VERSAO: ${{ steps.release.outputs.versao }}
+        run: |
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock README.md
+          if git diff --cached --quiet; then
+            echo "Os arquivos de versão já estavam em ${VERSAO}."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "Versão ${VERSAO} [skip ci]"
+          git fetch origin main
+          if git rebase origin/main && git push origin HEAD:main; then
+            echo "Versão ${VERSAO} gravada em main."
+          else
+            git rebase --abort || true
+            echo "A release v${VERSAO} foi publicada. main avançou durante o build e o commit de versão não entrou."
+          fi

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lerArgumentos, lerVersoes, validarVersoes, validarTag, planejarVersao, sincronizarVersao, verificarPublicacao, validarArtefatos } from "./versao-release.mjs";
+import { lerArgumentos, lerVersoes, validarVersoes, validarTag, planejarVersao, sincronizarVersao, verificarPublicacao, validarArtefatos, proximaVersao, ultimaVersaoPublicada } from "./versao-release.mjs";
 
 function projeto(t, versoes = ["0.1.1", "0.1.1", "0.1.1", "0.1.1"]) {
   const raiz = mkdtempSync(join(tmpdir(), "niko-release-teste-"));
@@ -20,7 +20,11 @@ function projeto(t, versoes = ["0.1.1", "0.1.1", "0.1.1", "0.1.1"]) {
 test("exige versão explícita e mantém as notas separadas", () => {
   assert.throws(() => lerArgumentos(["Melhorias em Estudos"]), /Informe a versão/);
   assert.throws(() => lerArgumentos([]), /Informe a versão/);
-  assert.deepEqual(lerArgumentos(["0.1.2", "Melhorias", "em Estudos"]), { versao: "0.1.2", notas: "Melhorias em Estudos", verificar: false, recompilar: false, ajuda: false });
+  assert.deepEqual(lerArgumentos(["0.1.2", "Melhorias", "em Estudos"]), { versao: "0.1.2", notas: "Melhorias em Estudos", verificar: false, recompilar: false, automatica: false, ajuda: false });
+  assert.equal(lerArgumentos(["--automatica", "Correção do chat"]).automatica, true);
+  assert.equal(lerArgumentos(["--automatica", "Correção do chat"]).versao, undefined);
+  assert.throws(() => lerArgumentos(["--automatica", "0.1.2"]), /calculada/);
+  assert.throws(() => lerArgumentos(["--automatica", "--recompilar"]), /não combina/);
   assert.equal(lerArgumentos(["--versao", "0.1.2", "Novidades"]).versao, "0.1.2");
   assert.equal(lerArgumentos(["--versao=0.1.2", "Novidades"]).notas, "Novidades");
   assert.equal(lerArgumentos(["--verificar"]).verificar, true);
@@ -100,6 +104,28 @@ test("recusa aplicar um plano se algum arquivo mudou após a leitura", (t) => {
   assert.throws(() => sincronizarVersao(plano), /mudou/);
   assert.equal(JSON.parse(readFileSync(join(raiz, "package.json"), "utf8")).version, "0.1.1");
   assert.equal(readFileSync(caminho, "utf8"), editado);
+});
+
+test("a versão automática sobe a correção e respeita um salto explícito", async () => {
+  const anterior = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = "token-teste";
+  try {
+    let autorizacao;
+    const publicada = await ultimaVersaoPublicada(async (_url, init) => {
+      autorizacao = init.headers.Authorization;
+      return { status: 200, json: async () => ({ tag_name: "v0.3.0" }) };
+    });
+    assert.equal(publicada, "0.3.0");
+    assert.equal(autorizacao, "Bearer token-teste");
+    assert.equal(await ultimaVersaoPublicada(async () => ({ status: 404 })), null);
+    assert.equal(proximaVersao("0.3.0", "0.3.0"), "0.3.1");
+    assert.equal(proximaVersao("0.3.0", null), "0.3.1");
+    assert.equal(proximaVersao("0.4.0", "0.3.9"), "0.4.0");
+    assert.equal(proximaVersao("0.3.0", "0.3.4"), "0.3.5");
+  } finally {
+    if (anterior === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = anterior;
+  }
 });
 
 test("bloqueia release já publicada, admite ausência e recusa falhas de rede", async () => {

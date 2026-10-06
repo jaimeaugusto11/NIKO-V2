@@ -12,13 +12,14 @@ export function validarVersao(versao) {
 }
 
 export function lerArgumentos(argumentos) {
-  const opcoes = { versao: undefined, notas: "", verificar: false, recompilar: false, ajuda: false };
+  const opcoes = { versao: undefined, notas: "", verificar: false, recompilar: false, automatica: false, ajuda: false };
   const notas = [];
   for (let i = 0; i < argumentos.length; i++) {
     const argumento = argumentos[i];
     if (argumento === "--") continue;
     if (argumento === "--verificar") opcoes.verificar = true;
     else if (argumento === "--recompilar") opcoes.recompilar = true;
+    else if (argumento === "--automatica") opcoes.automatica = true;
     else if (argumento === "--ajuda") opcoes.ajuda = true;
     else if (argumento === "--versao" || argumento.startsWith("--versao=")) {
       if (opcoes.versao) throw new Error("Informe a versão apenas uma vez.");
@@ -27,9 +28,11 @@ export function lerArgumentos(argumentos) {
     else if (!opcoes.versao && notas.length === 0 && /^\d/.test(argumento)) opcoes.versao = validarVersao(argumento);
     else notas.push(argumento);
   }
-  if (!opcoes.versao && !opcoes.verificar && !opcoes.ajuda) {
+  if (!opcoes.versao && !opcoes.verificar && !opcoes.ajuda && !opcoes.automatica) {
     throw new Error('Informe a versão explicitamente: pnpm lancar 0.1.2 "Notas da versão".');
   }
+  if (opcoes.automatica && opcoes.versao) throw new Error("Com --automatica a versão é calculada. Não informe uma versão.");
+  if (opcoes.automatica && opcoes.recompilar) throw new Error("--automatica não combina com --recompilar.");
   if (opcoes.recompilar && !opcoes.versao) throw new Error("Informe a versão para recompilar.");
   opcoes.notas = notas.join(" ");
   return opcoes;
@@ -76,6 +79,18 @@ export function validarVersoes(arquivos, esperada) {
 
 export function validarTag(versao, tag) {
   if (tag && tag !== `v${versao}`) throw new Error(`Tag ${tag} não corresponde à versão ${versao}. Use v${versao}.`);
+}
+
+export function proximaVersao(noRepositorio, publicada) {
+  validarVersao(noRepositorio);
+  if (!publicada) return incrementarCorrecao(noRepositorio);
+  validarVersao(publicada);
+  return menorQue(publicada, noRepositorio) ? noRepositorio : incrementarCorrecao(publicada);
+}
+
+function incrementarCorrecao(versao) {
+  const [maior, menor, correcao] = versao.split(".").map(Number);
+  return `${maior}.${menor}.${correcao + 1}`;
 }
 
 function menorQue(a, b) {
@@ -140,12 +155,36 @@ export function sincronizarVersao(plano) {
   }
 }
 
+function cabecalhosGitHub() {
+  const headers = { Accept: "application/vnd.github+json", "User-Agent": "Niko-release" };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+export async function ultimaVersaoPublicada(pedir = fetch) {
+  let resposta;
+  try {
+    resposta = await pedir("https://api.github.com/repos/jaimeaugusto11/NIKO-V2/releases/latest", {
+      headers: cabecalhosGitHub(),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    throw new Error("Não foi possível consultar o GitHub. Confira a internet e tente novamente. Nenhuma versão foi alterada.");
+  }
+  if (resposta.status === 404) return null;
+  if (resposta.status !== 200) throw new Error(`Não foi possível ler a última release no GitHub (HTTP ${resposta.status}). Nenhuma versão foi alterada.`);
+  const dados = await resposta.json();
+  const tag = String(dados.tag_name ?? "");
+  return validarVersao(tag.startsWith("v") ? tag.slice(1) : tag);
+}
+
 export async function verificarPublicacao(versao, pedir = fetch) {
   validarVersao(versao);
   let resposta;
   try {
     resposta = await pedir(`https://api.github.com/repos/jaimeaugusto11/NIKO-V2/releases/tags/v${versao}`, {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": "Niko-release" },
+      headers: cabecalhosGitHub(),
       signal: AbortSignal.timeout(15000),
     });
   } catch {

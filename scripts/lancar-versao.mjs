@@ -3,15 +3,22 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { lerArgumentos, lerVersoes, validarVersoes, validarTag, planejarVersao, sincronizarVersao, verificarPublicacao, validarArtefatos } from "./versao-release.mjs";
+import { lerArgumentos, lerVersoes, validarVersoes, validarTag, planejarVersao, sincronizarVersao, verificarPublicacao, validarArtefatos, proximaVersao, ultimaVersaoPublicada } from "./versao-release.mjs";
 
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 async function lancar() {
   const opcoes = lerArgumentos(process.argv.slice(2));
   if (opcoes.ajuda) {
-    console.log('Nova release: pnpm lancar 0.1.2 "Notas da versão"\nSó conferir: pnpm lancar:verificar\nPrévia da sincronização: pnpm lancar 0.1.2 --verificar\nRepetir um build publicado: pnpm lancar 0.1.1 --recompilar "Notas da versão"');
+    console.log('Nova release: pnpm lancar 0.1.2 "Notas da versão"\nVersão seguinte, usada no fluxo automático: pnpm lancar --automatica "Notas da versão"\nSó conferir: pnpm lancar:verificar\nPrévia da sincronização: pnpm lancar 0.1.2 --verificar\nRepetir um build publicado: pnpm lancar 0.1.1 --recompilar "Notas da versão"');
     return;
+  }
+  if (!opcoes.notas && process.env.NIKO_NOTAS) opcoes.notas = process.env.NIKO_NOTAS.replace(/\s+/g, " ").trim();
+  if (opcoes.automatica) {
+    const atual = validarVersoes(lerVersoes(raiz));
+    const publicada = await ultimaVersaoPublicada();
+    opcoes.versao = proximaVersao(atual, publicada);
+    console.log(`Próxima versão: ${opcoes.versao}${publicada ? ` (última publicada: ${publicada})` : " (ainda não há release)"}.`);
   }
   const tag = process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined;
   if (opcoes.verificar) {

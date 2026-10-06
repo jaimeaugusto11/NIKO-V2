@@ -190,15 +190,21 @@ pnpm app         # gera o instalador do Windows
 
 ### Publicar uma nova versão
 
+Um push para `main` publica sozinho a versão seguinte. O fluxo sobe a correção (de `0.3.0` para `0.3.1`), assina o instalador, cria a release `v` dessa versão e envia o `latest.json`. As aplicações instaladas recebem essa release pelo atualizador. Um push para outro ramo não altera a produção. Se `main` receber vários pushes seguidos, as publicações acontecem uma de cada vez.
+
+O fluxo precisa do segredo `TAURI_SIGNING_PRIVATE_KEY` no repositório, com a mesma chave das versões anteriores. Se a chave tiver senha, grave também `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. A chave privada não entra no Git.
+
+Para preparar uma versão à mão, sem publicar:
+
 Informe a versão explicitamente, sem editar os arquivos à mão:
 
 ```powershell
 pnpm lancar 0.1.2 "Descrição das novidades"
 ```
 
-O comando sincroniza `package.json`, `src-tauri/tauri.conf.json`, a versão do pacote Niko em `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`, além do selo de versão deste README. Antes de escrever, valida os arquivos, recusa redução de versão e consulta o GitHub para impedir uma release duplicada. Em builds feitos a partir de uma tag no GitHub Actions, a tag precisa ser `v` seguida da mesma versão.
+O comando sincroniza `package.json`, `src-tauri/tauri.conf.json`, a versão do pacote Niko em `src-tauri/Cargo.toml` e `src-tauri/Cargo.lock`, além do selo de versão deste README. Antes de escrever, valida os arquivos, recusa redução de versão e consulta o GitHub para impedir uma release duplicada.
 
-O instalador e a assinatura precisam existir com o nome esperado e ter sido gerados no build atual. Só depois é criado o `latest.json`. O comando não publica nada no GitHub. Envie o instalador e o manifesto gerados em `src-tauri/target/release/bundle/nsis`.
+O instalador e a assinatura precisam existir com o nome esperado e ter sido gerados no build atual. Só depois é criado o `latest.json`. Este comando, corrido à mão, não publica nada no GitHub. Quem publica é o push para `main`.
 
 Use a mesma chave de atualização das versões anteriores. O script usa `TAURI_SIGNING_PRIVATE_KEY` ou a chave em `%USERPROFILE%\.tauri\niko-atualizacao.key`. Se ela tiver senha, configure `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` no terminal. Nunca publique a chave privada.
 
