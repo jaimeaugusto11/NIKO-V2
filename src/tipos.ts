@@ -386,7 +386,7 @@ export interface Memoria {
   data: string;
 }
 
-export type ServicoId = "stripe" | "github" | "vercel" | "resend" | "notion" | "calcom" | "n8n" | "gmail" | "supabase" | "cloudflare" | "gcalendar" | "microsoft" | "todoist" | "telegram";
+export type ServicoId = "stripe" | "github" | "vercel" | "resend" | "notion" | "calcom" | "n8n" | "gmail" | "supabase" | "cloudflare" | "gcalendar" | "microsoft" | "todoist" | "telegram" | "aws";
 
 export type StatusConexao = "conectado" | "sem_chave" | "erro" | "pausado" | "sem_internet";
 

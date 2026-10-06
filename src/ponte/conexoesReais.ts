@@ -150,6 +150,17 @@ export interface DadosTelegram {
   historico: { texto: string; resposta: string; data: string }[];
 }
 
+export interface DadosAws {
+  conta: string;
+  regiao: string;
+  instancias: { id: string; nome: string; estado: string; tipo: string; ip: string; zona: string; verificacao: string }[];
+  clusters: { nome: string; estado: string; servicos: number; pendentes: number; rodando: number }[];
+  servicosEcs: { nome: string; cluster: string; estado: string; desejadas: number; rodando: number; pendentes: number; tipo: string }[];
+  outros: { nome: string; tipo: "rds" | "lambda" | "balanceador"; estado: string; detalhe: string }[];
+  avisos: { nome: string; estado: "ok" | "alarme" | "insuficiente"; servico: string; motivo: string; atualizado: string }[];
+  semPermissao: string[];
+}
+
 export type DadosServico = {
   gmail: DadosGmail;
   supabase: DadosSupabase;
@@ -165,6 +176,7 @@ export type DadosServico = {
   microsoft: DadosMicrosoft;
   todoist: DadosTodoist;
   telegram: DadosTelegram;
+  aws: DadosAws;
 };
 
 const CABECALHOS = { "x-niko": "1", "content-type": "application/json" };
@@ -179,7 +191,7 @@ async function pedir<R>(caminho: string, opcoes: RequestInit = {}): Promise<R> {
 export const conexoesPonte = {
   estado: () => pedir<Record<ServicoId, { temChave: boolean; url: string | null }>>("/conexoes"),
   ler: <S extends ServicoId>(servico: S, forcar = false) => pedir<DadosServico[S]>(`/conexoes/${servico}${forcar ? "?forcar=1" : ""}`),
-  salvarChave: (servico: ServicoId, chave: string, extra: { url?: string; clienteId?: string; segredo?: string; inquilino?: string } = {}) => pedir<{ ok: boolean }>(`/conexoes/${servico}/chave`, { method: "POST", body: JSON.stringify({ chave, ...extra }) }),
+  salvarChave: (servico: ServicoId, chave: string, extra: { url?: string; clienteId?: string; segredo?: string; inquilino?: string; sessao?: string } = {}) => pedir<{ ok: boolean }>(`/conexoes/${servico}/chave`, { method: "POST", body: JSON.stringify({ chave, ...extra }) }),
   buscarEmails: (q: string) => pedir<EmailResumo[]>(`/gmail/buscar?q=${encodeURIComponent(q)}`),
   criarRascunho: (dados: { para: string; assunto: string; corpo: string }) => pedir<{ ok: boolean }>("/gmail/rascunho", { method: "POST", body: JSON.stringify(dados) }),
   enviarEmail: (dados: { para: string; assunto: string; corpo: string }) => pedir<{ ok: boolean }>("/gmail/enviar", { method: "POST", body: JSON.stringify(dados) }),
@@ -222,6 +234,10 @@ export function resumoDe<S extends ServicoId>(servico: S, dados: DadosServico[S]
       return R.todoist((d as DadosTodoist).hoje.length, (d as DadosTodoist).hoje.filter((t) => t.atrasada).length);
     case "telegram":
       return (d as DadosTelegram).ligado ? R.telegramLigado((d as DadosTelegram).bot) : R.telegramEsperando((d as DadosTelegram).codigo);
+    case "aws": {
+      const aws = d as DadosAws;
+      return R.aws(aws.instancias.filter((i) => i.estado === "no_ar").length, aws.avisos.filter((a) => a.estado === "alarme").length);
+    }
     default:
       return R.n8n((d as DadosN8n).execucoes.filter((e) => e.status === "erro").length);
   }
@@ -257,6 +273,8 @@ export function ocorrenciasDe<S extends ServicoId>(servico: S, dados: DadosServi
       return (d as DadosMicrosoft).emails.filter((e) => e.naoLido && e.importante).map((e) => ({ chave: e.id, texto: O.outlookImportante(e.de, e.assunto), tipo: "sucesso" as const, data: e.data }));
     case "n8n":
       return (d as DadosN8n).execucoes.filter((e) => e.status !== "rodando").map((e) => ({ chave: e.id, texto: e.status === "erro" ? O.n8nFalhou(e.workflow) : O.n8nOk(e.workflow), tipo: e.status === "erro" ? "falha" : "sucesso", data: e.data }));
+    case "aws":
+      return (d as DadosAws).avisos.filter((a) => a.estado === "alarme").map((a) => ({ chave: `${a.servico}-${a.nome}-${a.atualizado || a.motivo}`, texto: O.awsAlarme(a.nome, a.servico), tipo: "falha" as const, data: a.atualizado || new Date().toISOString() }));
     default:
       return [];
   }
@@ -293,6 +311,7 @@ export const LINKS_DO_GUIA: Record<ServicoId, (string | null)[]> = {
   ],
   todoist: ["https://app.todoist.com/app/settings/integrations/developer", null],
   telegram: ["https://t.me/BotFather", null, null, null],
+  aws: ["https://console.aws.amazon.com/iam/home#/users", null, null, null],
 };
 
 export const PAINEL_OFICIAL: Record<ServicoId, string> = {
@@ -310,6 +329,7 @@ export const PAINEL_OFICIAL: Record<ServicoId, string> = {
   microsoft: "https://outlook.office.com",
   todoist: "https://app.todoist.com",
   telegram: "https://web.telegram.org",
+  aws: "https://console.aws.amazon.com/",
 };
 
 const diaLocal = (iso: string) => (iso.length <= 10 ? iso : new Date(iso).toLocaleDateString("sv-SE"));

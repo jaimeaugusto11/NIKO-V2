@@ -228,6 +228,29 @@ function montarResumo(servico: ServicoId, dados: DadosServico[ServicoId]): Resum
         linhas: d.agendamentos.slice(0, 6).map((a, i) => ({ chave: `${a.inicio}-${i}`, principal: a.pessoa || a.tipo, secundario: a.tipo, estado: a.status, quando: a.inicio })),
       };
     }
+    case "aws": {
+      const d = dados as DadosServico["aws"];
+      const noAr = d.instancias.filter((i) => i.estado === "no_ar").length;
+      const alarmes = d.avisos.filter((a) => a.estado === "alarme");
+      const ecsAtras = d.servicosEcs.filter((s) => s.estado === "alerta").length;
+      return {
+        numeros: [
+          { rotulo: M.noAr, valor: d.instancias.length ? `${noAr}/${d.instancias.length}` : 0, tom: noAr < d.instancias.length ? "alerta" : "sucesso" },
+          { rotulo: M.servicosEcs, valor: d.servicosEcs.length, tom: ecsAtras ? "alerta" : "" },
+          { rotulo: M.outrosServicos, valor: d.outros.length },
+          { rotulo: M.avisos, valor: alarmes.length, tom: alarmes.length ? "erro" : "" },
+        ],
+        aviso: alarmes[0]
+          ? { texto: alarmes[0].motivo || alarmes[0].nome, tom: "erro" }
+          : { texto: d.instancias.length ? I.instanciasNoAr(noAr, d.instancias.length) : I.semAvisosAws, tom: d.instancias.length > 0 && noAr < d.instancias.length ? "alerta" : "sucesso" },
+        tituloDaLista: I.instanciasEAvisos,
+        linhas: [
+          ...d.instancias.slice(0, 4).map((i) => ({ chave: i.id, principal: i.nome, secundario: `${i.tipo} . ${i.zona}`, estado: i.verificacao === "alerta" ? "alarme" : i.estado })),
+          ...alarmes.slice(0, 4).map((a) => ({ chave: `${a.servico}-${a.nome}`, principal: a.nome, secundario: a.motivo, estado: a.estado, quando: a.atualizado || undefined })),
+          ...d.servicosEcs.slice(0, 3).map((s) => ({ chave: `${s.cluster}-${s.nome}`, principal: s.nome, secundario: s.cluster, estado: s.estado, valor: `${s.rodando}/${s.desejadas}` })),
+        ],
+      };
+    }
     case "n8n": {
       const d = dados as DadosServico["n8n"];
       const erros = d.execucoes.filter((e) => e.status === "erro").length;

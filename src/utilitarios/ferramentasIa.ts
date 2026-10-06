@@ -162,7 +162,7 @@ async function lerArquivoDaMateria(a: Argumentos): Promise<ResultadoFerramenta> 
   return { tipo: "erro", mensagem: T.chat.recursos.arquivoNaoEncontrado };
 }
 
-const SERVICOS_IA: ServicoId[] = ["gcalendar", "microsoft", "todoist", "gmail", "stripe", "github", "vercel", "supabase", "cloudflare", "resend", "notion", "calcom", "n8n"];
+const SERVICOS_IA: ServicoId[] = ["gcalendar", "microsoft", "todoist", "gmail", "stripe", "github", "vercel", "supabase", "cloudflare", "aws", "resend", "notion", "calcom", "n8n"];
 
 function cartaoEmail(tipo: "rascunho" | "email", a: Argumentos): ResultadoFerramenta {
   if (!useComunicacao.getState().conexoes.find((x) => x.id === "gmail")?.chaveSalva) return { tipo: "erro", mensagem: ERROS.gmailDesconectado };
@@ -395,7 +395,7 @@ const FERRAMENTAS: FerramentaNiko[] = [
   {
     definicao: {
       nome: "ler_conexao",
-      descricao: "Dados reais e detalhados de uma conexão ligada: Google Calendar (eventos dos próximos 30 dias), Microsoft 365 (e-mails do Outlook, agenda e chats do Teams), Todoist (tarefas de hoje, atrasadas e dos próximos 7 dias), Stripe (cobranças, saldo), GitHub (PRs, issues, Actions), Vercel (deploys), Gmail (não lidos, importantes), Supabase (projetos, usuários, storage, logs), Cloudflare (domínios, DNS, Pages, Workers, métricas), Resend, Notion, Cal.com e n8n.",
+      descricao: "Dados reais e detalhados de uma conexão ligada: Google Calendar (eventos dos próximos 30 dias), Microsoft 365 (e-mails do Outlook, agenda e chats do Teams), Todoist (tarefas de hoje, atrasadas e dos próximos 7 dias), Stripe (cobranças, saldo), GitHub (PRs, issues, Actions), Vercel (deploys), Gmail (não lidos, importantes), Supabase (projetos, usuários, storage, logs), Cloudflare (domínios, DNS, Pages, Workers, métricas), AWS (instâncias, ECS, RDS, Lambda, balanceadores e alarmes), Resend, Notion, Cal.com e n8n.",
       parametros: { type: "object", properties: { servico: { type: "string", enum: SERVICOS_IA } }, required: ["servico"] },
     },
     assincrona: async (a) => {

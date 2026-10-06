@@ -56,11 +56,11 @@ function Tabela<L>({ linhas, colunas, filtro }: { linhas: L[]; colunas: Coluna<L
 }
 
 function Estado({ valor }: { valor: string }) {
-  const tom = ["pago", "sucesso", "pronto", "entregue", "aberto", "confirmado", "aprovado", "pago"].includes(valor)
+  const tom = ["pago", "sucesso", "pronto", "entregue", "aberto", "confirmado", "aprovado", "pago", "no_ar", "ok"].includes(valor)
     ? "sucesso"
-    : ["falhou", "erro", "devolvido", "spam", "cancelado"].includes(valor)
+    : ["falhou", "erro", "devolvido", "spam", "cancelado", "alarme", "encerrada"].includes(valor)
       ? "erro"
-      : ["rodando", "construindo", "a_caminho", "pendente", "mudancas", "reembolsado"].includes(valor)
+      : ["rodando", "construindo", "a_caminho", "pendente", "mudancas", "reembolsado", "alerta", "insuficiente", "parada", "parando", "iniciando", "encerrando"].includes(valor)
         ? "alerta"
         : "";
   return <span className={`etiqueta ${tom ? `etiqueta-${tom}` : ""}`}>{E[valor] ?? valor}</span>;
@@ -600,6 +600,79 @@ function ConteudoServico({ servico, aba, filtro, dados, aoMudar }: { servico: Se
         {d.projetos.some((p) => p.semSql) && <AvisoFaixa>{M.semSql}</AvisoFaixa>}
         {d.projetos.flatMap((p) => p.servicos.filter((x) => !x.saudavel).map((x) => <AvisoFaixa key={`${p.ref}-${x.nome}`} tipo="erro">{T.conexoes.ocorrencias.supabaseServico(p.nome, x.nome)}</AvisoFaixa>))}
         {projetos}
+      </div>
+    );
+  }
+
+  if (servico === "aws") {
+    const d = dados as DadosServico["aws"];
+    const rotuloTipo = (tipo: string) => (E[tipo] ?? tipo);
+    if (aba === "instancias")
+      return d.instancias.length ? <Tabela filtro={filtro} linhas={d.instancias} colunas={[
+        { titulo: C.nome, render: (l) => l.nome, texto: (l) => `${l.nome} ${l.id}` },
+        { titulo: C.instancia, render: (l) => <code>{l.id}</code>, texto: (l) => l.id },
+        { titulo: C.tipo, render: (l) => l.tipo, texto: (l) => l.tipo },
+        { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+        { titulo: C.verificacao, render: (l) => <Estado valor={l.verificacao} />, texto: (l) => E[l.verificacao] ?? l.verificacao },
+        { titulo: C.ip, render: (l) => <span className="privado">{l.ip}</span>, texto: (l) => l.ip },
+        { titulo: C.disponibilidade, render: (l) => l.zona, direita: true },
+      ]} /> : <Vazio titulo={T.janelaConexao.semResultados} />;
+    if (aba === "ecs")
+      return (
+        <div className="coluna">
+          {d.clusters.length ? <Tabela filtro={filtro} linhas={d.clusters} colunas={[
+            { titulo: C.cluster, render: (l) => l.nome, texto: (l) => l.nome },
+            { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+            { titulo: C.servicos, render: (l) => l.servicos, direita: true },
+            { titulo: C.rodando, render: (l) => l.rodando, direita: true },
+            { titulo: C.pendentes, render: (l) => l.pendentes, direita: true },
+          ]} /> : <Vazio titulo={T.janelaConexao.semResultados} />}
+          {d.servicosEcs.length > 0 && <Tabela filtro={filtro} linhas={d.servicosEcs} colunas={[
+            { titulo: C.nome, render: (l) => l.nome, texto: (l) => `${l.nome} ${l.cluster}` },
+            { titulo: C.cluster, render: (l) => l.cluster, texto: (l) => l.cluster },
+            { titulo: C.tipo, render: (l) => l.tipo, texto: (l) => l.tipo },
+            { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+            { titulo: C.desejadas, render: (l) => l.desejadas, direita: true },
+            { titulo: C.rodando, render: (l) => l.rodando, direita: true },
+            { titulo: C.pendentes, render: (l) => l.pendentes, direita: true },
+          ]} />}
+        </div>
+      );
+    if (aba === "servicos")
+      return d.outros.length ? <Tabela filtro={filtro} linhas={d.outros} colunas={[
+        { titulo: C.nome, render: (l) => l.nome, texto: (l) => `${l.nome} ${l.detalhe}` },
+        { titulo: C.tipo, render: (l) => rotuloTipo(l.tipo), texto: (l) => rotuloTipo(l.tipo) },
+        { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+        { titulo: C.detalhe, render: (l) => <span className="cortar" style={{ maxWidth: 360, display: "inline-block" }}>{l.detalhe}</span>, texto: (l) => l.detalhe },
+      ]} /> : <Vazio titulo={T.janelaConexao.semResultados} />;
+    if (aba === "avisos")
+      return d.avisos.length ? <Tabela filtro={filtro} linhas={d.avisos} colunas={[
+        { titulo: C.aviso, render: (l) => l.nome, texto: (l) => `${l.nome} ${l.motivo}` },
+        { titulo: C.tipo, render: (l) => l.servico, texto: (l) => l.servico },
+        { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+        { titulo: C.motivo, render: (l) => <span className="cortar" style={{ maxWidth: 360, display: "inline-block" }}>{l.motivo}</span>, texto: (l) => l.motivo },
+        { titulo: C.data, render: (l) => (l.atualizado ? data(l.atualizado) : ""), direita: true },
+      ]} /> : <Vazio titulo={T.janelaConexao.semResultados} />;
+    const M = T.janelaConexao.metricas;
+    const noAr = d.instancias.filter((i) => i.estado === "no_ar").length;
+    const alarmes = d.avisos.filter((a) => a.estado === "alarme").length;
+    return (
+      <div className="coluna">
+        <div className="grade-metricas">
+          <Metrica rotulo={M.noAr} valor={`${noAr}/${d.instancias.length}`} />
+          <Metrica rotulo={M.clusters} valor={d.clusters.length} />
+          <Metrica rotulo={M.servicosEcs} valor={d.servicosEcs.length} />
+          <Metrica rotulo={M.avisos} valor={alarmes} />
+        </div>
+        {d.semPermissao.map((nome) => <AvisoFaixa key={nome}>{M.semPermissaoAws(nome)}</AvisoFaixa>)}
+        {d.avisos.filter((a) => a.estado === "alarme").map((a) => <AvisoFaixa key={`${a.servico}-${a.nome}`} tipo="erro">{T.conexoes.ocorrencias.awsAlarme(a.nome, a.servico)}</AvisoFaixa>)}
+        {d.instancias.length ? <Tabela filtro={filtro} linhas={d.instancias} colunas={[
+          { titulo: C.nome, render: (l) => l.nome, texto: (l) => `${l.nome} ${l.id}` },
+          { titulo: C.tipo, render: (l) => l.tipo, texto: (l) => l.tipo },
+          { titulo: C.status, render: (l) => <Estado valor={l.estado} />, texto: (l) => E[l.estado] ?? l.estado },
+          { titulo: C.verificacao, render: (l) => <Estado valor={l.verificacao} />, texto: (l) => E[l.verificacao] ?? l.verificacao },
+          { titulo: C.disponibilidade, render: (l) => l.zona, direita: true },
+        ]} /> : null}
       </div>
     );
   }

@@ -25,6 +25,7 @@ import type { Evento, ServicoId } from "../tipos";
 import { addDays, addMonths, addWeeks } from "date-fns";
 import { conquistaLigada, funcaoLigada } from "../utilitarios/funcoes";
 import { processarTelegram } from "./telegram";
+import { avisarMensagensSociais } from "./social";
 
 const INTERVALO_TELEGRAM_MS = 4000;
 
@@ -336,4 +337,6 @@ export function useServicos() {
     const t = window.setInterval(() => void processarTelegram(), INTERVALO_TELEGRAM_MS);
     return () => window.clearInterval(t);
   }, []);
+
+  useEffect(() => avisarMensagensSociais(), []);
 }

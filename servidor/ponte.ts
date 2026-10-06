@@ -10,6 +10,7 @@ import { pedirJanelas } from "./janelasWindows";
 import { estadoConexoes, lerConexao, salvarChaveConexao, removerChaveConexao, servicoValido, chaveDe, esquecerCache, iniciarConexoesDeFundo, SERVICOS as SERVICOS_CONEXAO } from "./conexoes";
 import { concluirTodoist, criarTodoist } from "./todoist";
 import { pegarPendentes, responderTelegram } from "./telegram";
+import { abrirDiretaSocial, adicionarAoGrupoSocial, conversasSocial, criarGrupoSocial, entrarSocial, enviarSocial, estadoSocial, marcarLidaSocial, mensagensSocial, ouvirSocial, registarSocial, sairDaConversaSocial, sairSocial } from "./social";
 import { buscarGmail, criarRascunhoGmail, enviarGmail } from "./gmail";
 import { lerAudio, definirVolume, definirMudo, ajustarSessao, lerTema, lerIniciar, definirTema, abrirFerramenta, agirNaEnergia, lerBandeja, abrirDaBandeja } from "./controleRapido";
 import { ocrDaRequisicao } from "./ocr";
@@ -156,6 +157,27 @@ export const rotas: Connect.NextHandleFunction = async (req, res, proximo) => {
       const resultado = acaoTodoist[1] === "concluir" ? await concluirTodoist(chave, corpo) : await criarTodoist(chave, corpo);
       esquecerCache("todoist");
       return responder(res, 200, resultado);
+    }
+    if (caminho.startsWith("/social/")) {
+      const acao = caminho.slice("/social/".length);
+      if (req.method === "GET") {
+        if (acao === "estado") return responder(res, 200, await estadoSocial());
+        if (acao === "eventos") return ouvirSocial(req, res);
+        if (acao === "conversas") return responder(res, 200, await conversasSocial());
+        if (acao === "mensagens") return responder(res, 200, await mensagensSocial(url.searchParams.get("conversa"), url.searchParams.get("antes")));
+      }
+      const escritaSocial: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
+        registar: registarSocial,
+        entrar: entrarSocial,
+        sair: () => sairSocial(),
+        enviar: enviarSocial,
+        direta: abrirDiretaSocial,
+        grupo: criarGrupoSocial,
+        adicionar: adicionarAoGrupoSocial,
+        "sair-da-conversa": sairDaConversaSocial,
+        lida: marcarLidaSocial,
+      };
+      if (req.method === "POST" && escritaSocial[acao]) return responder(res, 200, await escritaSocial[acao](await lerCorpo(req)));
     }
     if (caminho === "/telegram/pendentes" && req.method === "GET") return responder(res, 200, { mensagens: pegarPendentes() });
     if (caminho === "/telegram/responder" && req.method === "POST") return responder(res, 200, await responderTelegram(await lerCorpo(req)));

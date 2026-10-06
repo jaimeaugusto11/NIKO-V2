@@ -7,6 +7,7 @@ import { encerrarControle } from "./controleRapido";
 import { encerrarSistema } from "./sistema";
 import { iniciarConexoesDeFundo } from "./conexoes";
 import { pararTelegram } from "./telegram";
+import { encerrarSocial } from "./social";
 
 const porta = Number(process.env.NIKO_PORTA) || 47831;
 const ORIGENS = new Set(["http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"]);
@@ -51,6 +52,7 @@ const encerrar = () => {
   encerrarControle();
   encerrarSistema();
   pararTelegram();
+  encerrarSocial();
   fecharBanco();
   servidor.close();
   process.exit(0);

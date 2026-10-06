@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Plus, Search, Send, Download, Trash2, Copy, Check, Sparkles, Terminal, Square, Settings2, Info, RotateCcw, Play, Zap, AlertTriangle, Paperclip, Lightbulb, ListChecks, ScanText, type LucideIcon } from "lucide-react";
 import { TextoRico } from "../../componentes/TextoRico";
@@ -20,6 +20,7 @@ import { provedoresEmOrdem, escolherAgente, type ProvedorEmUso } from "../../uti
 import { EVENTO_NOVO } from "../../janelas/area-de-trabalho/usarAtalhos";
 import type { AgenteId, Conversa, Mensagem } from "../../tipos";
 import type { AcaoAnexo } from "../../utilitarios/recursosChat";
+import { ChatPessoas, SeletorDoChat, type ModoDoChat } from "./ChatPessoas";
 
 const ICONES_ACAO_ANEXO: Record<AcaoAnexo, LucideIcon> = { resumir: Sparkles, explicar: Lightbulb, perguntas: ListChecks, extrair: ScanText };
 
@@ -152,6 +153,16 @@ function RolarParaFim({ alvo, conversaId, quantidade }: { alvo: React.RefObject<
 
 export default function Chat() {
   const parametros = useInterface((s) => s.parametros);
+  const [modo, setModo] = useState<ModoDoChat>(parametros.modo === "pessoas" ? "pessoas" : "time");
+  useEffect(() => {
+    if (parametros.modo === "pessoas" || parametros.modo === "time") setModo(parametros.modo);
+  }, [parametros.modo]);
+  const seletor = <SeletorDoChat valor={modo} aoMudar={setModo} />;
+  return modo === "pessoas" ? <ChatPessoas seletor={seletor} /> : <ChatDoTime seletor={seletor} />;
+}
+
+function ChatDoTime({ seletor }: { seletor: ReactNode }) {
+  const parametros = useInterface((s) => s.parametros);
   const avisar = useInterface((s) => s.avisar);
   const irPara = useInterface((s) => s.irPara);
   const conversas = useComunicacao((s) => s.conversas);
@@ -267,6 +278,7 @@ export default function Chat() {
   return (
     <div className="chat">
       <aside className="chat-historico">
+        {seletor}
         <Botao variante="primario" icone={<Plus size={14} />} onClick={() => { setAtualId(undefined); campo.current?.focus(); }}>{T.chat.novaConversa}</Botao>
         <label className="campo-busca" style={{ maxWidth: "none" }}>
           <Search size={14} />

@@ -17,6 +17,19 @@ type Filtro = keyof typeof T.conexoes.filtros;
 
 const INTERVALOS = [30, 60, 120, 300, 600];
 
+const REGIOES_AWS: [string, string][] = [
+  ["eu-west-1", "Europa (Irlanda)"],
+  ["eu-west-2", "Europa (Londres)"],
+  ["eu-west-3", "Europa (Paris)"],
+  ["eu-central-1", "Europa (Frankfurt)"],
+  ["eu-south-2", "Europa (Espanha)"],
+  ["eu-north-1", "Europa (Estocolmo)"],
+  ["us-east-1", "EUA (Virgínia)"],
+  ["us-east-2", "EUA (Ohio)"],
+  ["us-west-2", "EUA (Oregon)"],
+  ["sa-east-1", "América do Sul (São Paulo)"],
+];
+
 function GuiaConexao({ servico }: { servico: ServicoId }) {
   const links = LINKS_DO_GUIA[servico];
   return (
@@ -50,6 +63,10 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
   const [url, setUrl] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [inquilino, setInquilino] = useState("");
+  const [idAcesso, setIdAcesso] = useState("");
+  const [segredo, setSegredo] = useState("");
+  const [sessao, setSessao] = useState("");
+  const [regiao, setRegiao] = useState("eu-west-1");
   const [erro, setErro] = useState("");
   const [testando, setTestando] = useState(false);
   useEffect(() => {
@@ -58,6 +75,10 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
     setUrl("");
     setClienteId("");
     setInquilino("");
+    setIdAcesso("");
+    setSegredo("");
+    setSessao("");
+    setRegiao("eu-west-1");
   }, [servico]);
   if (!servico || !conexao) return <Modal aberto={false} titulo="" aoFechar={aoFechar}>{null}</Modal>;
   const nome = T.conexoes.servicos[servico].nome;
@@ -81,15 +102,28 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
       setErro(T.conexoes.tokenTelegramInvalido);
       return;
     }
-    if (chave.trim().length < 8) {
+    if (servico === "aws") {
+      if (!/^(AKIA|ASIA)[A-Z0-9]{16}$/.test(idAcesso.trim())) {
+        setErro(T.conexoes.awsChaveInvalida);
+        return;
+      }
+      if (segredo.trim().length < 30) {
+        setErro(T.conexoes.awsSegredoInvalido);
+        return;
+      }
+      if (idAcesso.trim().startsWith("ASIA") && sessao.trim().length < 16) {
+        setErro(T.conexoes.awsSessaoInvalida);
+        return;
+      }
+    } else if (chave.trim().length < 8) {
       setErro(T.conexoes.chaveCurta);
       return;
     }
     setTestando(true);
     setErro("");
     try {
-      const extra = servico === "n8n" ? { url: url.trim() } : google ? { clienteId: clienteId.trim(), segredo: chave.trim() } : microsoft ? { inquilino: inquilino.trim() } : {};
-      await conexoesPonte.salvarChave(servico, chave.trim(), extra);
+      const extra = servico === "n8n" ? { url: url.trim() } : servico === "aws" ? { segredo: segredo.trim(), url: regiao, sessao: sessao.trim() } : google ? { clienteId: clienteId.trim(), segredo: chave.trim() } : microsoft ? { inquilino: inquilino.trim() } : {};
+      await conexoesPonte.salvarChave(servico, servico === "aws" ? idAcesso.trim() : chave.trim(), extra);
       setChave("");
       const dados = await conexoesPonte.ler(servico, true);
       atualizar(servico, { chaveSalva: true, ligada: true, status: "conectado", ultimaAtualizacao: new Date().toISOString(), resumo: resumoDe(servico, dados) });
@@ -121,7 +155,25 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
             <input id="cx-url" className="campo" type="url" autoComplete="off" spellCheck={false} value={url} onChange={(e) => setUrl(e.target.value)} />
           </Campo>
         )}
-        <Campo id="cx-chave" rotulo={rotuloDaChave} erro={erro} dica={dicaDaChave}>
+        {servico === "aws" && (
+          <>
+            <Campo id="cx-regiao" rotulo={T.conexoes.awsRegiao} dica={T.conexoes.awsRegiaoDica}>
+              <select id="cx-regiao" className="seletor" value={regiao} onChange={(e) => setRegiao(e.target.value)}>
+                {REGIOES_AWS.map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+              </select>
+            </Campo>
+            <Campo id="cx-id-acesso" rotulo={T.conexoes.awsChave} dica={T.conexoes.awsChaveDica}>
+              <input id="cx-id-acesso" className="campo" autoComplete="off" spellCheck={false} value={idAcesso} onChange={(e) => { setIdAcesso(e.target.value.trim()); setErro(""); }} />
+            </Campo>
+            <Campo id="cx-segredo" rotulo={T.conexoes.awsSegredo} erro={erro} dica={T.conexoes.awsSegredoDica}>
+              <input id="cx-segredo" className="campo" type="password" autoComplete="off" spellCheck={false} value={segredo} aria-invalid={!!erro} onChange={(e) => { setSegredo(e.target.value); setErro(""); }} />
+            </Campo>
+            <Campo id="cx-sessao" rotulo={T.conexoes.awsSessao} dica={T.conexoes.awsSessaoDica}>
+              <input id="cx-sessao" className="campo" type="password" autoComplete="off" spellCheck={false} value={sessao} onChange={(e) => setSessao(e.target.value)} />
+            </Campo>
+          </>
+        )}
+        {servico !== "aws" && <Campo id="cx-chave" rotulo={rotuloDaChave} erro={erro} dica={dicaDaChave}>
           <input
             id="cx-chave"
             className="campo"
@@ -136,14 +188,14 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
               setErro("");
             }}
           />
-        </Campo>
+        </Campo>}
         {microsoft && (
           <Campo id="cx-inquilino" rotulo={T.conexoes.inquilino} dica={T.conexoes.inquilinoDica}>
             <input id="cx-inquilino" className="campo" autoComplete="off" spellCheck={false} maxLength={100} value={inquilino} onChange={(e) => setInquilino(e.target.value)} />
           </Campo>
         )}
         <div className="linha">
-          <Botao type="submit" variante="primario" icone={<KeyRound size={14} />} disabled={testando || !chave.trim()}>
+          <Botao type="submit" variante="primario" icone={<KeyRound size={14} />} disabled={testando || (servico === "aws" ? !idAcesso.trim() || !segredo.trim() : !chave.trim())}>
             {testando ? (porLogin ? T.conexoes.aguardandoGoogle : T.conexoes.testando) : google ? T.conexoes.conectarGoogle : microsoft ? T.conexoes.conectarMicrosoft : T.conexoes.salvarChave}
           </Botao>
           {conexao.chaveSalva && (

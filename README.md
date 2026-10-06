@@ -53,7 +53,7 @@ Uma barra discreta no topo da tela, com três estados: escondida, compacta e exp
 - **Foco:** pomodoro com etapas de foco e pausa.
 - **Hábitos e Agenda:** marcação rápida e próximos compromissos.
 - **Chat:** conversa rápida com o time, com anexos.
-- **Conexões:** números e últimas atividades de cada serviço, como cobranças do Stripe, Actions do GitHub, e-mails do Resend e tráfego do Cloudflare.
+- **Conexões:** números e últimas atividades de cada serviço, como cobranças do Stripe, Actions do GitHub, e-mails do Resend, tráfego do Cloudflare e instâncias, ECS e alarmes da AWS.
 - **Avisos:** os alertas do time.
 
 Na área de trabalho, a ilha ganha uma **aba de cada lado**, ligadas por uma faixa fina no topo. Com um app na frente, fica só a ilha.
@@ -87,7 +87,7 @@ Substitui a barra de tarefas do Windows com a logo do Niko e os apps abertos, ag
 | **Finanças** | Contas, cartões, transações, orçamento, recorrentes, metas de economia, divisão de contas, lista de compras e relatórios |
 | **Metas** | Pilares de vida, metas medidas por hábitos, horas de estudo, economia ou tarefas, e quadro de visão |
 | **Calendário** | Tudo que tem data no Niko, nas vistas de mês, semana e agenda, com eventos e lembretes recorrentes |
-| **Conexões** | Google Calendar, Microsoft 365 (Outlook, calendário e Teams), Todoist, Telegram, Gmail, Stripe, GitHub, Vercel, Resend, Notion, Cal.com, n8n, Supabase e Cloudflare, cada um com janela própria. Os eventos do Google e do Outlook aparecem no Calendário, e pelo bot do Telegram dá para mandar tarefas, gastos e lembretes do celular |
+| **Conexões** | Google Calendar, Microsoft 365 (Outlook, calendário e Teams), Todoist, Telegram, Gmail, Stripe, GitHub, Vercel, Resend, Notion, Cal.com, n8n, Supabase, Cloudflare e AWS, cada um com janela própria. Os eventos do Google e do Outlook aparecem no Calendário, e pelo bot do Telegram dá para mandar tarefas, gastos e lembretes do celular |
 | **Provedores de IA** | Escolha do provedor e do modelo, com chave guardada no cofre do Windows |
 | **Consumo de IA** | Uso e limites das ferramentas de IA que você usa |
 | **Conquistas** | Marcos e mapa de calor da sua rotina |

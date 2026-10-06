@@ -7,8 +7,9 @@ import { autorizarGoogleCalendar, lerGoogleCalendar } from "./googleCalendar";
 import { autorizarMicrosoft, lerMicrosoft } from "./microsoft";
 import { lerTodoist } from "./todoist";
 import { esquecerTelegram, iniciarTelegram, lerTelegram, prepararBot, tokenValido } from "./telegram";
+import { lerAws } from "./aws";
 
-export const SERVICOS = ["stripe", "github", "vercel", "resend", "notion", "calcom", "n8n", "gmail", "supabase", "cloudflare", "gcalendar", "microsoft", "todoist", "telegram"] as const;
+export const SERVICOS = ["stripe", "github", "vercel", "resend", "notion", "calcom", "n8n", "gmail", "supabase", "cloudflare", "gcalendar", "microsoft", "todoist", "telegram", "aws"] as const;
 export type Servico = (typeof SERVICOS)[number];
 
 const ARQUIVO = () => join(pastaDados(), "conexoes.json");
@@ -220,6 +221,7 @@ const LEITORES: Record<Servico, Leitor> = {
   microsoft: async (chave) => lerMicrosoft(chave, (nova) => gravarSegredo("conexao-microsoft", JSON.stringify(nova))),
   todoist: async (chave) => lerTodoist(chave),
   telegram: async (chave) => lerTelegram(chave),
+  aws: async (chave) => lerAws(chave),
   supabase: async (chave) => {
     const h = { authorization: `Bearer ${chave}` };
     const base = "https://api.supabase.com/v1";
@@ -348,7 +350,7 @@ async function autorizarPorLogin(servico: "gmail" | "gcalendar" | "microsoft", d
   return JSON.stringify(await autorizar(String(dados.clienteId ?? "").trim(), String(dados.segredo ?? "").trim()));
 }
 
-export async function salvarChaveConexao(servico: Servico, dados: { chave?: unknown; url?: unknown; clienteId?: unknown; segredo?: unknown; inquilino?: unknown }) {
+export async function salvarChaveConexao(servico: Servico, dados: { chave?: unknown; url?: unknown; clienteId?: unknown; segredo?: unknown; inquilino?: unknown; sessao?: unknown }) {
   if (servico === "gmail" || servico === "gcalendar" || servico === "microsoft") {
     const texto = await autorizarPorLogin(servico, dados);
     await gravarSegredo(`conexao-${servico}`, texto);
@@ -362,6 +364,17 @@ export async function salvarChaveConexao(servico: Servico, dados: { chave?: unkn
     return { ok: true };
   }
   const chave = typeof dados.chave === "string" ? dados.chave.trim() : "";
+  if (servico === "aws") {
+    const segredo = typeof dados.segredo === "string" ? dados.segredo.trim() : "";
+    const regiao = typeof dados.url === "string" ? dados.url.trim() : "";
+    const sessao = typeof dados.sessao === "string" ? dados.sessao.trim() : "";
+    const pacote = JSON.stringify({ accessKeyId: chave, secretAccessKey: segredo, region: regiao, ...(sessao ? { sessionToken: sessao } : {}) });
+    if (Buffer.byteLength(pacote, "utf8") > LIMITE_BYTES) throw new Error("aws_segredo_invalido");
+    await LEITORES.aws(pacote);
+    await gravarSegredo("conexao-aws", pacote);
+    marcarConectado("aws", regiao);
+    return { ok: true };
+  }
   if (chave.length < 8 || Buffer.byteLength(chave, "utf8") > LIMITE_BYTES) throw new Error("chave_invalida");
   if (servico === "telegram" && !tokenValido(chave)) throw new Error("token_invalido");
   const url = servico === "n8n" ? validarUrlBase(String(dados.url ?? "")) : undefined;
