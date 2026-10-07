@@ -12,7 +12,7 @@ import "./estilos/componentes.css";
 import "./estilos/sistema.css";
 import "./estilos/modulos.css";
 import { iniciarArmazenamento } from "./ponte/armazenamento";
-import { JANELA, NATIVO, prepararPonte, desviarLinksExternos } from "./desktop/desktop";
+import { JANELA, MOVEL, NATIVO, prepararPonte, desviarLinksExternos } from "./desktop/desktop";
 import { T } from "./textos/textos";
 
 document.documentElement.dataset.tema = "claro";
@@ -22,7 +22,7 @@ async function iniciar() {
   await prepararPonte();
   desviarLinksExternos();
   let modo = "local";
-  const tentativas = NATIVO ? 120 : 1;
+  const tentativas = NATIVO && !MOVEL ? 120 : 1;
   for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
     modo = await iniciarArmazenamento();
     if (modo === "banco" || tentativa === tentativas) break;
@@ -30,13 +30,15 @@ async function iniciar() {
   }
   const raiz = document.getElementById("raiz");
   if (!raiz) return;
-  if (NATIVO && modo !== "banco") {
+  if (NATIVO && !MOVEL && modo !== "banco") {
     if (JANELA !== "sistema") return;
     raiz.innerHTML = `<div class="falha-ponte"><h1>${T.app.ponteFalhou}</h1><p>${T.app.ponteFalhouDica}</p></div>`;
     return;
   }
   let Raiz: () => React.ReactElement;
-  if (!NATIVO) Raiz = (await import("./janelas/area-de-trabalho/AreaDeTrabalho")).AreaDeTrabalho;
+  const siteMovel = MOVEL || (import.meta.env.PROD && !NATIVO);
+  if (siteMovel) Raiz = (await import("./movel/AppMovel")).AppMovel;
+  else if (!NATIVO) Raiz = (await import("./janelas/area-de-trabalho/AreaDeTrabalho")).AreaDeTrabalho;
   else {
     const apps = await import("./desktop/Aplicativos");
     Raiz = JANELA === "ilha" ? apps.AppIlha : JANELA === "dock" ? apps.AppDock : apps.AppSistema;
@@ -46,6 +48,9 @@ async function iniciar() {
       <Raiz />
     </StrictMode>,
   );
+  if (!NATIVO && import.meta.env.PROD && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => void navigator.serviceWorker.register("/sw.js"));
+  }
 }
 
 void iniciar();

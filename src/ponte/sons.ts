@@ -33,6 +33,12 @@ let temporizadorFechar: number | undefined;
 const buffers = new Map<NomeSom, AudioBuffer>();
 const carregando = new Map<NomeSom, Promise<AudioBuffer | null>>();
 const ultimoToque = new Map<NomeSom, number>();
+const ouvintesDeSom = new Set<(nome: NomeSom, categoria: CategoriaSom) => void>();
+
+export function aoTocarSom(fn: (nome: NomeSom, categoria: CategoriaSom) => void): () => void {
+  ouvintesDeSom.add(fn);
+  return () => ouvintesDeSom.delete(fn);
+}
 
 export function definirPreferenciasSom(novas: PreferenciasSom) {
   preferencias = novas;
@@ -86,6 +92,7 @@ export async function tocarSom(nome: NomeSom, categoria: CategoriaSom = "interfa
   const agora = performance.now();
   if (agora - (ultimoToque.get(nome) ?? 0) < 400) return;
   ultimoToque.set(nome, agora);
+  ouvintesDeSom.forEach((f) => f(nome, categoria));
   const ctx = obterContexto();
   if (!ctx || !ganho) return;
   try {

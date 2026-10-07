@@ -9,7 +9,7 @@ const POLITICA_SEGURANCA = [
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
   "media-src 'self'",
-  "connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:47831",
+  "connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:47831 https://fctmmmicryhhtuvvbcfw.supabase.co wss://fctmmmicryhhtuvvbcfw.supabase.co https://api.github.com",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",

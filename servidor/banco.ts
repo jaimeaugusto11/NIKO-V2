@@ -48,6 +48,10 @@ export function lerTudo(nome = ""): Record<string, string> {
   return Object.fromEntries(linhas.map((l) => [l.chave, l.valor]));
 }
 
+export function lerLinhas(nome = ""): { chave: string; valor: string; atualizado: number }[] {
+  return abrir(nome).prepare("SELECT chave, valor, atualizado FROM dados").all() as { chave: string; valor: string; atualizado: number }[];
+}
+
 export function gravar(itens: Record<string, string | null>, nome = "") {
   const db = abrir(nome);
   const inserir = db.prepare("INSERT INTO dados (chave, valor, atualizado) VALUES (?, ?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor, atualizado = excluded.atualizado");

@@ -296,6 +296,25 @@ $PROCESSOS_DE_FUNDO = '(?i)(container|service|services|host|helper|update|update
 $processos = @{}
 $iconesDeProcesso = @{}
 $bandejaConhecida = @{}
+$aplicacoesInstaladas = $null
+function IdDoPacote($caminho) {
+  if ($null -eq $script:aplicacoesInstaladas) {
+    $script:aplicacoesInstaladas = @{}
+    try {
+      foreach ($a in @(Get-StartApps -ErrorAction SilentlyContinue)) {
+        $id = [string]$a.AppID
+        if ($id -and -not $id.StartsWith('http')) { $script:aplicacoesInstaladas[$id.ToLowerInvariant()] = $id }
+      }
+    } catch { }
+  }
+  if ($caminho -match '\\WindowsApps\\(.+?)_\d+(?:\.\d+)+_.*?_([^\\]+)\\') {
+    $familia = ($Matches[1] + '_' + $Matches[2]).ToLowerInvariant()
+    foreach ($id in $script:aplicacoesInstaladas.Values) {
+      if ($id.ToLowerInvariant().StartsWith($familia)) { return $id }
+    }
+  }
+  return $null
+}
 
 function InfoDoProcesso($processoId) {
   if ($processos.ContainsKey($processoId)) { return $processos[$processoId] }
@@ -367,7 +386,13 @@ function Bandeja {
     $chave = $caminho.ToLowerInvariant()
     if (-not $rodando.ContainsKey($chave)) { continue }
     if ($IGNORAR_NA_BANDEJA -contains [IO.Path]::GetFileName($chave)) { continue }
-    $icone = $(if ($v.IconSnapshot) { 'data:image/png;base64,' + [Convert]::ToBase64String([byte[]]$v.IconSnapshot) } else { $null })
+    $icone = $null
+    if ($v.IconSnapshot -and @($v.IconSnapshot).Length -gt 32) { $icone = 'data:image/png;base64,' + [Convert]::ToBase64String([byte[]]$v.IconSnapshot) }
+    if (-not $icone) {
+      $idDoPacote = IdDoPacote $caminho
+      if ($idDoPacote) { $icone = IconeDoProcesso ("shell:AppsFolder\$idDoPacote") }
+    }
+    if (-not $icone) { $icone = IconeDoProcesso $caminho }
     $anterior = $itens[$chave]
     if ($anterior -and ($anterior.icone -or -not $icone)) { continue }
     $info = InfoDoProcesso ([int]$rodando[$chave][0].Id)

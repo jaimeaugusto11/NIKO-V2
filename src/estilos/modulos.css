@@ -1666,6 +1666,7 @@
 .cal-mes {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: auto repeat(var(--semanas, 6), minmax(118px, 1fr));
   border-radius: 16px;
   border: 1px solid var(--borda);
   background: var(--borda);
@@ -1754,6 +1755,10 @@
   padding: 1px 7px;
   border-radius: 999px;
   background: var(--superficie-2);
+}
+
+.cal-dia-marcas {
+  display: contents;
 }
 
 .cal-chip {

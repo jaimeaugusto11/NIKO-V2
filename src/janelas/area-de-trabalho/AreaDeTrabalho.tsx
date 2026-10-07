@@ -11,10 +11,14 @@ import { useConfig } from "../../estado/configuracoes";
 import { usarTema } from "./usarTema";
 import { usarAtalhos } from "./usarAtalhos";
 import { useServicos } from "../../servicos/servicos";
+import { usarSincronia } from "../../desktop/sincronia";
+import { usarSincroniaNuvem } from "../../sincronia/sincronizar";
 
 export function AreaDeTrabalho() {
   usarTema();
   usarAtalhos();
+  usarSincronia();
+  usarSincroniaNuvem();
   useServicos();
   const aberto = useInterface((s) => s.sistemaAberto);
   const minimizado = useInterface((s) => s.sistemaMinimizado);

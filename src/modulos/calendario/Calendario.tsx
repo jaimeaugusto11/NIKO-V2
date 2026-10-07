@@ -325,7 +325,7 @@ export default function Calendario() {
       <div className="cal-layout">
         <div className="cal-principal">
           {vista === "mes" && (
-            <div className="cal-mes" style={{ gridTemplateRows: `auto repeat(${semanasNoMes}, minmax(118px, 1fr))` }}>
+            <div className="cal-mes" style={{ "--semanas": semanasNoMes } as CSSProperties}>
               {T.calendario.diasSemana.map((d, n) => <div key={d} className="cal-mes-cabecalho" data-fds={n >= 5 ? "sim" : "nao"}>{d}</div>)}
               {dias.map((d, n) => {
                 const iso = paraISO(d);
@@ -349,7 +349,9 @@ export default function Calendario() {
                       <span className="cal-dia-numero numero">{d.getDate()}</span>
                       {lista.length > limite && <span className="cal-dia-mais">{T.calendario.mais(lista.length - limite)}</span>}
                     </span>
-                    {lista.slice(0, limite).map((i) => <Chip key={i.id} i={i} />)}
+                    <span className="cal-dia-marcas">
+                      {lista.slice(0, limite).map((i) => <Chip key={i.id} i={i} />)}
+                    </span>
                   </button>
                 );
               })}
@@ -458,7 +460,7 @@ export default function Calendario() {
                 )}
               </div>
             )}
-            <p className="campo-dica">{T.calendario.dicaDuplo}</p>
+            <p className="campo-dica cal-dica-duplo">{T.calendario.dicaDuplo}</p>
           </Cartao>
 
           <Cartao titulo={T.calendario.proximos} icone={<CalendarDays size={16} />}>

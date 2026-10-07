@@ -1,0 +1,16 @@
+{
+  "name": "Niko",
+  "short_name": "Niko",
+  "description": "Agenda, agentes e o dia, no telemóvel.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f6f5",
+  "theme_color": "#f6f6f5",
+  "lang": "pt",
+  "icons": [
+    { "src": "/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

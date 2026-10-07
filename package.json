@@ -9,7 +9,7 @@
         "build": "tsc && vite build",
         "preview": "vite preview",
         "verificar": "tsc",
-        "test": "node --test --test-concurrency=1 scripts/chat.test.mjs scripts/midia.test.mjs scripts/claude.test.mjs scripts/versao-release.test.mjs scripts/animacoes-ilha.test.mjs scripts/ilha.test.mjs scripts/armazenamento.test.mjs scripts/mesclar.test.mjs scripts/consumo.test.mjs scripts/conexoes.test.mjs scripts/aws.test.mjs scripts/social.test.mjs",
+        "test": "node --test --test-concurrency=1 scripts/chat.test.mjs scripts/midia.test.mjs scripts/claude.test.mjs scripts/versao-release.test.mjs scripts/animacoes-ilha.test.mjs scripts/ilha.test.mjs scripts/armazenamento.test.mjs scripts/mesclar.test.mjs scripts/sincronia.test.mjs scripts/consumo.test.mjs scripts/conexoes.test.mjs scripts/aws.test.mjs scripts/social.test.mjs",
         "personagens": "node scripts/preparar-personagens.mjs",
         "ponte:build": "node scripts/construir-ponte.mjs",
         "tauri": "tauri",

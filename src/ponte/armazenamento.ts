@@ -25,6 +25,8 @@ const emEnvio = new Map<string, number>();
 const escritaLocal = new Map<string, number>();
 // Última versão de cada chave que esta janela sabe ser comum com as outras; é a base das fusões.
 const sincronizado = new Map<string, string | null>();
+const alteradoEm = new Map<string, number>();
+const ouvintesDeEdicao = new Set<() => void>();
 let relogioLocal = 0;
 let temporizador = 0;
 const canal = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("niko-dados") : null;
@@ -95,6 +97,17 @@ function marcarEscritaLocal(chave: string) {
   escritaLocal.set(chave, ++relogioLocal);
 }
 
+function publicarEdicao(nome: string) {
+  if (nome === `${PREFIXO}sincronia` || nome === `${PREFIXO}migrado`) return;
+  ouvintesDeEdicao.forEach((f) => f());
+}
+
+/** Dispara quando esta janela altera um bloco de dados. A hidratação inicial não conta. */
+export function aoEditarLocal(fn: () => void): () => void {
+  ouvintesDeEdicao.add(fn);
+  return () => ouvintesDeEdicao.delete(fn);
+}
+
 async function recarregarDaPonte() {
   if (modo !== "banco") return;
   const marco = relogioLocal;
@@ -154,6 +167,12 @@ const armazenamentoSeguro: StateStorage = {
   getItem: (nome) => (modo === "banco" ? cache.get(nome) ?? null : localSeguro(() => localStorage.getItem(nome), cache.get(nome) ?? null)),
   setItem: (nome, valor) => {
     if (travado) return;
+    const anterior = modo === "banco" ? cache.get(nome) ?? null : localSeguro(() => localStorage.getItem(nome), null);
+    // A primeira gravação é a hidratação dos valores por omissão. Só uma alteração a um valor já gravado conta como edição deste aparelho.
+    if (nome !== "niko:sincronia" && anterior !== null && anterior !== valor) {
+      alteradoEm.set(nome, Date.now());
+      publicarEdicao(nome);
+    }
     if (modo === "banco") {
       if (cache.get(nome) === valor) return;
       cache.set(nome, valor);
@@ -172,6 +191,10 @@ const armazenamentoSeguro: StateStorage = {
   },
   removeItem: (nome) => {
     if (travado) return;
+    if (nome !== "niko:sincronia") {
+      alteradoEm.set(nome, Date.now());
+      publicarEdicao(nome);
+    }
     if (modo === "banco") {
       cache.delete(nome);
       pendentes.set(nome, null);
@@ -296,6 +319,16 @@ export function lerChave(nome: string): string | null {
 
 export function gravarChave(nome: string, valor: string) {
   armazenamentoSeguro.setItem(nome, valor);
+}
+
+export function momentoDaChave(nome: string): number {
+  return alteradoEm.get(nome) ?? 0;
+}
+
+/** Aplica um valor vindo de outro aparelho e avisa as lojas para relerem. */
+export function aplicarRemoto(nome: string, valor: string) {
+  if (modo !== "banco") localSeguro(() => localStorage.setItem(nome, valor), undefined);
+  receberDeFora({ origem: "ponte", chave: nome, valor });
 }
 
 export function apagarChave(nome: string) {

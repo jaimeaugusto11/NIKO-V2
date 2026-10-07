@@ -26,6 +26,7 @@ import { addDays, addMonths, addWeeks } from "date-fns";
 import { conquistaLigada, funcaoLigada } from "../utilitarios/funcoes";
 import { processarTelegram } from "./telegram";
 import { avisarMensagensSociais } from "./social";
+import { CAPACIDADES } from "../plataforma/plataforma";
 
 const INTERVALO_TELEGRAM_MS = 4000;
 
@@ -274,7 +275,7 @@ export function useServicos() {
     const limpouExemplos = limparExemplos();
     const limpouSimulacoes = limparSimulacoes();
     if (limpouExemplos || limpouSimulacoes) useInterface.getState().avisar(T.configuracoes.exemplosRemovidos);
-    void acertarConexoes();
+    if (CAPACIDADES.ponte) void acertarConexoes();
     useRotina.getState().marcarAbertura();
     useFinancas.getState().garantirCategorias();
     useOrganizacao.getState().garantirPilares();
@@ -291,14 +292,16 @@ export function useServicos() {
     let midia: number | undefined;
     const iniciar = () => {
       parar();
-      planos = window.setInterval(() => void verificarLimitesPlanos(), 5 * 60000);
-      void useMidia.getState().sincronizar();
-      midia = window.setInterval(() => void useMidia.getState().sincronizar(), 2500);
-      void verificarLimitesPlanos();
+      if (CAPACIDADES.ponte) {
+        planos = window.setInterval(() => void verificarLimitesPlanos(), 5 * 60000);
+        void useMidia.getState().sincronizar();
+        midia = window.setInterval(() => void useMidia.getState().sincronizar(), 2500);
+        void verificarLimitesPlanos();
+      }
       verificarDatas();
       rapido = window.setInterval(() => {
         verificarPomodoro();
-        lerConexoes();
+        if (CAPACIDADES.ponte) lerConexoes();
       }, 1000);
       lento = window.setInterval(() => {
         verificarLembretes();
@@ -334,9 +337,10 @@ export function useServicos() {
   }, [inatividade]);
 
   useEffect(() => {
+    if (!CAPACIDADES.ponte) return;
     const t = window.setInterval(() => void processarTelegram(), INTERVALO_TELEGRAM_MS);
     return () => window.clearInterval(t);
   }, []);
 
-  useEffect(() => avisarMensagensSociais(), []);
+  useEffect(() => (CAPACIDADES.ponte ? avisarMensagensSociais() : undefined), []);
 }

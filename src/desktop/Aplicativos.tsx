@@ -14,11 +14,13 @@ import { usarAtalhos } from "../janelas/area-de-trabalho/usarAtalhos";
 import { useServicos } from "../servicos/servicos";
 import { PRINCIPAL, janelaAtual, ouvirComandos, ouvirEvento, sincronizarInicioComWindows } from "./desktop";
 import { usarSincronia } from "./sincronia";
+import { usarSincroniaNuvem } from "../sincronia/sincronizar";
 
 export function AppSistema() {
   usarTema();
   usarAtalhos();
   usarSincronia();
+  usarSincroniaNuvem();
   const janelas = useInterface((s) => s.janelasConexao);
   const primeira = useConfig((s) => s.primeiraExecucaoFeita);
   const iniciarComWindows = useConfig((s) => s.iniciarComWindows);

@@ -3,6 +3,9 @@ import { criarProcessoPowerShell } from "./processoPowerShell";
 const CODIGO = String.raw`
 using System;
 using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class NikoJanelas {
@@ -67,6 +70,101 @@ public static class NikoJanelas {
   public static bool Minimizar(long id) { return ShowWindow(new IntPtr(id), 6); }
   [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   public static bool Fechar(long id) { return PostMessage(new IntPtr(id), 0x0010, IntPtr.Zero, IntPtr.Zero); }
+
+  const uint CONSULTA_LIMITADA = 0x1000;
+  static readonly Guid AumidFormato = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+
+  [StructLayout(LayoutKind.Sequential)] struct Tamanho { public int cx; public int cy; }
+  [StructLayout(LayoutKind.Sequential, Pack = 4)] struct ChaveDePropriedade { public Guid formato; public uint id; }
+  [StructLayout(LayoutKind.Explicit)] struct Variante { [FieldOffset(0)] public ushort tipo; [FieldOffset(8)] public IntPtr texto; }
+
+  [ComImport, Guid("BCC18B79-BA16-442F-80C4-8A59C30C463B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IFabricaDeIcone { [PreserveSig] int GetImage(Tamanho tamanho, int opcoes, out IntPtr bitmap); }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropriedades {
+    [PreserveSig] int GetCount(out uint total);
+    [PreserveSig] int GetAt(uint indice, out ChaveDePropriedade chave);
+    [PreserveSig] int GetValue(ref ChaveDePropriedade chave, out Variante valor);
+    [PreserveSig] int SetValue(ref ChaveDePropriedade chave, ref Variante valor);
+    [PreserveSig] int Commit();
+  }
+
+  [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint acesso, bool herdar, uint pid);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr alca);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr processo, int bandeiras, StringBuilder nome, ref int tamanho);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern int GetApplicationUserModelId(IntPtr processo, ref uint tamanho, StringBuilder id);
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SHCreateItemFromParsingName(string nome, IntPtr contexto, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IFabricaDeIcone item);
+  [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr janela, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropriedades propriedades);
+  [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr objeto);
+  [DllImport("ole32.dll")] static extern int PropVariantClear(ref Variante valor);
+
+  static IntPtr AbrirConsulta(uint pid) {
+    return OpenProcess(CONSULTA_LIMITADA, false, pid);
+  }
+
+  public static string CaminhoDoProcesso(uint pid) {
+    IntPtr processo = AbrirConsulta(pid);
+    if (processo == IntPtr.Zero) return null;
+    try {
+      int tamanho = 1024;
+      var nome = new StringBuilder(tamanho);
+      return QueryFullProcessImageName(processo, 0, nome, ref tamanho) ? nome.ToString() : null;
+    } catch { return null; }
+    finally { CloseHandle(processo); }
+  }
+
+  public static string AumidDoProcesso(uint pid) {
+    IntPtr processo = AbrirConsulta(pid);
+    if (processo == IntPtr.Zero) return null;
+    try {
+      uint tamanho = 1024;
+      var id = new StringBuilder(1024);
+      int codigo = GetApplicationUserModelId(processo, ref tamanho, id);
+      if (codigo == 122) {
+        id = new StringBuilder((int)tamanho);
+        codigo = GetApplicationUserModelId(processo, ref tamanho, id);
+      }
+      return codigo == 0 ? id.ToString() : null;
+    } catch { return null; }
+    finally { CloseHandle(processo); }
+  }
+
+  public static string AumidDaJanela(long id) {
+    Guid iid = typeof(IPropriedades).GUID;
+    IPropriedades propriedades;
+    if (SHGetPropertyStoreForWindow(new IntPtr(id), ref iid, out propriedades) != 0 || propriedades == null) return null;
+    var chave = new ChaveDePropriedade { formato = AumidFormato, id = 5 };
+    Variante valor = new Variante();
+    try {
+      if (propriedades.GetValue(ref chave, out valor) != 0 || valor.tipo != 31 || valor.texto == IntPtr.Zero) return null;
+      return Marshal.PtrToStringUni(valor.texto);
+    } catch { return null; }
+    finally { PropVariantClear(ref valor); }
+  }
+
+  public static string IconeDe(string alvo, int lado) {
+    if (string.IsNullOrEmpty(alvo)) return null;
+    Guid iid = typeof(IFabricaDeIcone).GUID;
+    IFabricaDeIcone fabrica;
+    if (SHCreateItemFromParsingName(alvo, IntPtr.Zero, ref iid, out fabrica) != 0 || fabrica == null) return null;
+    IntPtr bitmap;
+    if (fabrica.GetImage(new Tamanho { cx = lado, cy = lado }, 4, out bitmap) != 0 || bitmap == IntPtr.Zero) return null;
+    try {
+      using (var semAlfa = Image.FromHbitmap(bitmap)) {
+        var area = new Rectangle(0, 0, semAlfa.Width, semAlfa.Height);
+        var dados = semAlfa.LockBits(area, ImageLockMode.ReadOnly, semAlfa.PixelFormat);
+        try {
+          using (var comAlfa = new Bitmap(dados.Width, dados.Height, dados.Stride, PixelFormat.Format32bppPArgb, dados.Scan0))
+          using (var copia = new Bitmap(comAlfa))
+          using (var memoria = new MemoryStream()) {
+            copia.Save(memoria, ImageFormat.Png);
+            return "data:image/png;base64," + Convert.ToBase64String(memoria.ToArray());
+          }
+        } finally { semAlfa.UnlockBits(dados); }
+      }
+    } catch { return null; }
+    finally { DeleteObject(bitmap); }
+  }
 }
 `;
 
@@ -74,24 +172,76 @@ const SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Drawing
-Add-Type -TypeDefinition @'
+Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
 ` + CODIGO + String.raw`
 '@
 $icones = @{}
 $caminhos = @{}
-function Icone($caminho) {
-  if (-not $caminho) { return $null }
-  if ($icones.ContainsKey($caminho)) { return $icones[$caminho] }
+$aplicacoes = @{}
+try {
+  foreach ($a in @(Get-StartApps -ErrorAction SilentlyContinue)) {
+    $id = [string]$a.AppID
+    if (-not $id -or $id.StartsWith('http')) { continue }
+    $aplicacoes[$id.ToLowerInvariant()] = $id
+    $nomeDaApp = ([string]$a.Name).ToLowerInvariant()
+    if ($nomeDaApp -and -not $aplicacoes.ContainsKey($nomeDaApp)) { $aplicacoes[$nomeDaApp] = $id }
+  }
+} catch { }
+$caixaDoWindows = @{
+  'systemsettings' = 'windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel'
+  'microsoft.notes' = 'Microsoft.MicrosoftStickyNotes_8wekyb3d8bbwe!App'
+  'notepad' = 'Microsoft.WindowsNotepad_8wekyb3d8bbwe!App'
+  'calculatorapp' = 'Microsoft.WindowsCalculator_8wekyb3d8bbwe!App'
+  'windowsterminal' = 'Microsoft.WindowsTerminal_8wekyb3d8bbwe!App'
+  'mspaint' = 'Microsoft.Paint_8wekyb3d8bbwe!App'
+  'paintstudio.view' = 'Microsoft.Paint_8wekyb3d8bbwe!App'
+  'microsoft.photos' = 'Microsoft.Windows.Photos_8wekyb3d8bbwe!App'
+  'windowscamera' = 'Microsoft.WindowsCamera_8wekyb3d8bbwe!App'
+  'screensketch' = 'Microsoft.ScreenSketch_8wekyb3d8bbwe!App'
+  'snippingtool' = 'Microsoft.ScreenSketch_8wekyb3d8bbwe!App'
+  'windowssoundrecorder' = 'Microsoft.WindowsSoundRecorder_8wekyb3d8bbwe!App'
+  'video.ui' = 'Microsoft.ZuneVideo_8wekyb3d8bbwe!Microsoft.ZuneVideo'
+  'music.ui' = 'Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic'
+  'olk' = 'Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows'
+  'ms-teams' = 'MSTeams_8wekyb3d8bbwe!MSTeams'
+  'explorer' = 'Microsoft.Windows.Explorer'
+  'microsoft.windows.shell.store' = 'Microsoft.WindowsStore_8wekyb3d8bbwe!App'
+}
+function Icone($alvo) {
+  if (-not $alvo) { return $null }
+  if ($icones.ContainsKey($alvo)) { return $icones[$alvo] }
   $valor = $null
-  try {
-    $ico = [System.Drawing.Icon]::ExtractAssociatedIcon($caminho)
-    $bmp = $ico.ToBitmap()
-    $mem = New-Object System.IO.MemoryStream
-    $bmp.Save($mem, [System.Drawing.Imaging.ImageFormat]::Png)
-    $valor = 'data:image/png;base64,' + [Convert]::ToBase64String($mem.ToArray())
-  } catch { }
-  $icones[$caminho] = $valor
+  try { $valor = [NikoJanelas]::IconeDe([string]$alvo, 32) } catch { }
+  $icones[$alvo] = $valor
   return $valor
+}
+function IconeDaJanela($processoId, $hwnd, $caminho, $processo, $descricao, $titulo) {
+  $candidatos = New-Object System.Collections.Generic.List[string]
+  if ($processo -eq 'ApplicationFrameHost' -and $titulo) {
+    $hospedada = $aplicacoes[$titulo.ToLowerInvariant()]
+    if ($hospedada) { $candidatos.Add($hospedada) }
+  }
+  foreach ($aumid in @([NikoJanelas]::AumidDaJanela([long]$hwnd), [NikoJanelas]::AumidDoProcesso([uint32]$processoId))) {
+    if ($aumid) { $candidatos.Add($aumid) }
+  }
+  foreach ($texto in @($processo, $descricao)) {
+    if (-not $texto) { continue }
+    $id = $aplicacoes[$texto.ToLowerInvariant()]
+    if ($id) { $candidatos.Add($id) }
+  }
+  if ($caminho -match '\\WindowsApps\\(.+?)_\d+(?:\.\d+)+_.*?_([^\\]+)\\') {
+    $familia = ($Matches[1] + '_' + $Matches[2]).ToLowerInvariant()
+    foreach ($id in $aplicacoes.Values) {
+      if ($id.ToLowerInvariant().StartsWith($familia)) { $candidatos.Add($id); break }
+    }
+  }
+  $conhecido = $(if ($processo) { $caixaDoWindows[$processo.ToLowerInvariant()] } else { $null })
+  if ($conhecido) { $candidatos.Add($conhecido) }
+  foreach ($id in $candidatos) {
+    $icone = Icone ("shell:AppsFolder\$id")
+    if ($icone) { return $icone }
+  }
+  return Icone $caminho
 }
 while ($true) {
   $linha = [Console]::In.ReadLine()
@@ -106,11 +256,16 @@ while ($true) {
       foreach ($j in [NikoJanelas]::Listar()) {
         if (-not $caminhos.ContainsKey($j.Pid)) {
           $p = Get-Process -Id $j.Pid -ErrorAction SilentlyContinue
-          $caminhos[$j.Pid] = @{ nome = $(if ($p) { $p.ProcessName } else { '' }); caminho = $(try { $p.Path } catch { $null }); descricao = $(try { $p.MainModule.FileVersionInfo.FileDescription } catch { $null }) }
+          $caminho = [NikoJanelas]::CaminhoDoProcesso([uint32]$j.Pid)
+          if (-not $caminho -and $p) { try { $caminho = $p.Path } catch { } }
+          $descricao = $null
+          if ($caminho) { try { $descricao = [Diagnostics.FileVersionInfo]::GetVersionInfo($caminho).FileDescription } catch { } }
+          if (-not $descricao -and $p) { try { $descricao = $p.MainModule.FileVersionInfo.FileDescription } catch { } }
+          $caminhos[$j.Pid] = @{ nome = $(if ($p) { $p.ProcessName } else { '' }); caminho = $caminho; descricao = $descricao }
         }
         $info = $caminhos[$j.Pid]
         if ($info.nome -eq 'niko' -or ($info.nome -eq 'ApplicationFrameHost' -and $j.Titulo -eq '')) { continue }
-        $lista += @{ id = [string]$j.Id; pid = $j.Pid; titulo = $j.Titulo; minimizada = $j.Minimizada; ativa = $j.Ativa; app = $info.nome; nome = $(if ($info.descricao) { $info.descricao } else { $info.nome }); caminho = $info.caminho; icone = (Icone $info.caminho) }
+        $lista += @{ id = [string]$j.Id; pid = $j.Pid; titulo = $j.Titulo; minimizada = $j.Minimizada; ativa = $j.Ativa; app = $info.nome; nome = $(if ($info.descricao) { $info.descricao } else { $info.nome }); caminho = $info.caminho; icone = (IconeDaJanela $j.Pid $j.Id $info.caminho $info.nome $info.descricao $j.Titulo) }
       }
       $r = @{ janelas = $lista }
     }

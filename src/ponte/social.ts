@@ -24,7 +24,7 @@ export interface ConversaSocial {
   naoLidas: number;
 }
 
-export type EventoSocial = { tipo: "mensagem"; mensagem: MensagemSocial } | { tipo: "conversas" } | { tipo: "sessao" } | { tipo: "conectado" };
+export type EventoSocial = { tipo: "mensagem"; mensagem: MensagemSocial } | { tipo: "conversas" } | { tipo: "sessao" } | { tipo: "conectado" } | { tipo: "dados" };
 
 const CABECALHOS = { "x-niko": "1", "content-type": "application/json" };
 

@@ -5,7 +5,7 @@ import { AvisoFaixa, Botao, Cartao, Progresso } from "../../componentes/basicos"
 import { LogoNiko } from "../../componentes/LogoNiko";
 import { Marca } from "../../marcas/Marca";
 import { useAtualizacao } from "../../estado/atualizacao";
-import { NATIVO } from "../../desktop/desktop";
+import { MOVEL, NATIVO } from "../../desktop/desktop";
 import { T } from "../../textos/textos";
 
 const REPOSITORIO = "https://github.com/jaimeaugusto11/NIKO-V2";
@@ -37,7 +37,7 @@ export default function Atualizacao() {
             <div className="atualizacao-logo"><LogoNiko tamanho={56} /></div>
             <div className="coluna" style={{ gap: 4 }}>
               <h2 className="titulo-secao">{T.app.nome}</h2>
-              <span className="texto-2">{T.atualizacao.plataforma}</span>
+              <span className="texto-2">{MOVEL ? T.atualizacao.plataformaMovel : T.atualizacao.plataforma}</span>
             </div>
             <div className="atualizacao-versao">
               <span className="rotulo-pequeno">{T.atualizacao.versaoAtual}</span>
@@ -58,7 +58,7 @@ export default function Atualizacao() {
               <a className="botao botao-primario" href={`${VERSOES}/latest`} target="_blank" rel="noopener noreferrer"><Download size={15} />{T.atualizacao.baixarGithub}</a>
             ))}
           </div>
-          {disponivel && <p className="texto-3">{atualizacao.automatica ? T.atualizacao.instalacaoDica : NATIVO ? T.atualizacao.baixarManual : T.atualizacao.baixarNavegador}</p>}
+          {disponivel && <p className="texto-3">{atualizacao.automatica ? (MOVEL ? T.atualizacao.instalacaoMovel : T.atualizacao.instalacaoDica) : NATIVO ? T.atualizacao.baixarManual : T.atualizacao.baixarNavegador}</p>}
           {atualizacao.ultimaVerificacao && <p className="texto-3">{T.atualizacao.ultimaVerificacao}: <time dateTime={atualizacao.ultimaVerificacao}>{new Date(atualizacao.ultimaVerificacao).toLocaleString("pt-BR")}</time></p>}
         </Cartao>
         <div className="atualizacao-links">

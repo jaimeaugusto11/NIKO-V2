@@ -35,6 +35,7 @@ interface EstadoAgentes {
   falhar: (agente: AgenteId, texto: string) => void;
   verErro: (agente: AgenteId) => void;
   ouvir: (agente: AgenteId, ligado: boolean) => void;
+  acordar: (agente: AgenteId) => void;
   forcar: (agente: AgenteId, estado: EstadoAgente | null) => void;
   verificarSono: (minutos: number) => void;
   tique: () => void;
@@ -119,6 +120,9 @@ export const useAgentes = create<EstadoAgentes>()(
         ouvir: (agente, ligado) => {
           if (get().sinais[agente].ouvindo === ligado) return;
           mudarSinal(agente, (x) => ({ ...x, ouvindo: ligado }));
+        },
+        acordar: (agente) => {
+          if (get().dormindo[agente]) mudarSinal(agente, (x) => x);
         },
         forcar: (agente, estado) =>
           set((s) => {

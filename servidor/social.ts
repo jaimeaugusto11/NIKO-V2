@@ -17,7 +17,7 @@ export interface MensagemSocial {
   criadaEm: string;
 }
 
-type EventoSocial = { tipo: "mensagem"; mensagem: MensagemSocial } | { tipo: "conversas" } | { tipo: "sessao" } | { tipo: "conectado" };
+type EventoSocial = { tipo: "mensagem"; mensagem: MensagemSocial } | { tipo: "conversas" } | { tipo: "sessao" } | { tipo: "conectado" } | { tipo: "dados" };
 
 let cliente: SupabaseClient | null = null;
 let canal: RealtimeChannel | null = null;
@@ -56,6 +56,10 @@ function ligarTempoReal(supabase: SupabaseClient) {
     .channel("niko-chat")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens" }, (p) => emitir({ tipo: "mensagem", mensagem: paraMensagem(p.new as Record<string, unknown>) }))
     .on("postgres_changes", { event: "*", schema: "public", table: "participantes" }, () => emitir({ tipo: "conversas" }))
+    .on("postgres_changes", { event: "*", schema: "public", table: "dados_utilizador" }, (p) => {
+      const dispositivo = String((p.new as { dispositivo?: string } | null)?.dispositivo ?? "");
+      if (dispositivo !== "pc") emitir({ tipo: "dados" });
+    })
     .subscribe();
 }
 
@@ -103,6 +107,14 @@ async function usuarioAtual(supabase: SupabaseClient) {
   if (!usuario) return null;
   const { data: perfil } = await supabase.from("perfis").select("nome").eq("id", usuario.id).maybeSingle();
   return { id: usuario.id, email: usuario.email ?? "", nome: (perfil?.nome as string | undefined) ?? String(usuario.user_metadata?.nome ?? "") };
+}
+
+export async function clienteAutenticado(): Promise<{ supabase: SupabaseClient; usuarioId: string } | null> {
+  const supabase = await comSessao();
+  const { data } = await supabase.auth.getSession();
+  const usuario = data.session?.user;
+  if (!usuario) return null;
+  return { supabase, usuarioId: usuario.id };
 }
 
 async function exigirSessao(): Promise<SupabaseClient> {

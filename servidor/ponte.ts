@@ -11,6 +11,7 @@ import { estadoConexoes, lerConexao, salvarChaveConexao, removerChaveConexao, se
 import { concluirTodoist, criarTodoist } from "./todoist";
 import { pegarPendentes, responderTelegram } from "./telegram";
 import { abrirDiretaSocial, adicionarAoGrupoSocial, conversasSocial, criarGrupoSocial, entrarSocial, enviarSocial, estadoSocial, marcarLidaSocial, mensagensSocial, ouvirSocial, registarSocial, sairDaConversaSocial, sairSocial } from "./social";
+import { sincronizarDados } from "./sincronia";
 import { buscarGmail, criarRascunhoGmail, enviarGmail } from "./gmail";
 import { lerAudio, definirVolume, definirMudo, ajustarSessao, lerTema, lerIniciar, definirTema, abrirFerramenta, agirNaEnergia, lerBandeja, abrirDaBandeja } from "./controleRapido";
 import { ocrDaRequisicao } from "./ocr";
@@ -210,6 +211,9 @@ export const rotas: Connect.NextHandleFunction = async (req, res, proximo) => {
     }
     if (caminho === "/dados/backup" && req.method === "POST") {
       return responder(res, 200, { pasta: backupManual(String(req.headers["x-niko-banco"] ?? "")) });
+    }
+    if (caminho === "/sincronizar" && req.method === "POST") {
+      return responder(res, 200, await sincronizarDados(String(req.headers["x-niko-banco"] ?? "")));
     }
     if (caminho === "/consumo" && req.method === "GET") {
       return responder(res, 200, await lerConsumo(url.searchParams.get("forcar") === "1"));

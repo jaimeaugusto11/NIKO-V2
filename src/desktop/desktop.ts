@@ -12,6 +12,21 @@ const internos = typeof window !== "undefined" ? (window as unknown as { __TAURI
 
 export const NATIVO = Boolean(internos);
 
+function navegadorMovel() {
+  if (typeof window === "undefined") return false;
+  const agente = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/i.test(agente) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const instalado = window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  return /Android/i.test(agente) || ios || instalado || new URLSearchParams(window.location.search).has("movel");
+}
+
+/** Telemóvel nativo, iPhone, iPad, app instalada no ecrã, ou `?movel` para testar no navegador. */
+export const MOVEL = navegadorMovel();
+
+export const IPHONE = typeof window !== "undefined" && (/iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+
+export const INSTALADO = typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true);
+
 /** Rótulo real da janela no Tauri: a ilha e o dock dos monitores extras se chamam "ilha-…" e "dock-…". */
 export const ROTULO: string | null = NATIVO ? internos?.metadata?.currentWindow?.label ?? "sistema" : null;
 
@@ -127,6 +142,7 @@ function enviarPelaPonte(base: string, token: string | null) {
 }
 
 export async function prepararPonte() {
+  if (MOVEL) return;
   if (NATIVO && window.location.hostname === "tauri.localhost") {
     const [token, porta] = await Promise.all([invocar<string>("token_ponte"), invocar<number>("porta_ponte")]);
     enviarPelaPonte(`http://127.0.0.1:${porta ?? 47831}`, token);

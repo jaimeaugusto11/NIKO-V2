@@ -15,6 +15,8 @@ jobs:
   publicar:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: windows-latest
+    outputs:
+      versao: ${{ steps.release.outputs.versao }}
     steps:
       - name: Obter o código
         uses: actions/checkout@v4
@@ -87,3 +89,93 @@ jobs:
             git rebase --abort || true
             echo "A release v${VERSAO} foi publicada. main avançou durante o build e o commit de versão não entrou."
           fi
+
+  android:
+    needs: publicar
+    if: ${{ needs.publicar.result == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Obter o código
+        uses: actions/checkout@v4
+
+      - name: Preparar o pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Preparar o Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Preparar o Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Preparar o Android
+        uses: android-actions/setup-android@v3
+
+      - name: Preparar o NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-37" "ndk;29.0.14206865"
+          echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/29.0.14206865" >> "$GITHUB_ENV"
+
+      - name: Preparar o Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache do Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Exigir a chave de assinatura
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::Defina ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS e ANDROID_KEY_PASSWORD. Sem a mesma chave, o telemóvel não instala a atualização por cima da versão anterior."
+            exit 1
+          fi
+
+      - name: Alinhar a versão da release
+        env:
+          VERSAO: ${{ needs.publicar.outputs.versao }}
+        run: node --input-type=module -e 'import { planejarVersao, sincronizarVersao } from "./scripts/versao-release.mjs"; sincronizarVersao(planejarVersao(process.cwd(), process.env.VERSAO));'
+
+      - name: Preparar a assinatura
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/niko.keystore"
+          echo "TAURI_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/niko.keystore" >> "$GITHUB_ENV"
+
+      - name: Construir o APK
+        env:
+          TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TAURI_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: pnpm exec tauri android build --apk --target aarch64
+
+      - name: Publicar o APK na mesma release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSAO: ${{ needs.publicar.outputs.versao }}
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name 'app-arm64-release.apk' | head -n 1)
+          if [ -z "$apk" ]; then
+            echo "::error::O APK arm64 assinado não foi gerado."
+            exit 1
+          fi
+          nome="Niko_${VERSAO}_arm64.apk"
+          cp "$apk" "$nome"
+          gh release upload "v${VERSAO}" "$nome" --repo jaimeaugusto11/NIKO-V2 --clobber
