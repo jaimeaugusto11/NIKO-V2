@@ -8,7 +8,9 @@ import { useInterface } from "../../estado/interface";
 import { useConfig } from "../../estado/configuracoes";
 import { T } from "../../textos/textos";
 import { horarioRelativo } from "../../utilitarios/datas";
+import { lerChave } from "../../ponte/armazenamento";
 import { conexoesPonte, resumoDe, LINKS_DO_GUIA } from "../../ponte/conexoesReais";
+import { sincronizaPeloTelefone, useSincronia } from "../../sincronia/sincronizar";
 import { atualizarConexaoAgora } from "../../servicos/servicos";
 import { tocarSom } from "../../ponte/sons";
 import type { ServicoId } from "../../tipos";
@@ -235,8 +237,20 @@ function Configurar({ servico, aoFechar }: { servico: ServicoId | null; aoFechar
     </Modal>
   );
 }
+function configNoComputador(): Record<string, { temChave?: boolean }> {
+  try {
+    const lido = JSON.parse(lerChave("niko:conexoes-config") ?? "") as Record<string, { temChave?: boolean }>;
+    return lido && typeof lido === "object" ? lido : {};
+  } catch {
+    return {};
+  }
+}
+
 export default function Conexoes() {
   const parametros = useInterface((s) => s.parametros);
+  useSincronia((s) => s.em);
+  const peloTelefone = sincronizaPeloTelefone();
+  const noComputador = configNoComputador();
   const conexoes = useComunicacao((s) => s.conexoes);
   const eventos = useComunicacao((s) => s.eventosConexao);
   const atualizar = useComunicacao((s) => s.atualizarConexao);
@@ -247,8 +261,9 @@ export default function Conexoes() {
   const [configurando, setConfigurando] = useState<ServicoId | null>((parametros.servico as ServicoId) || null);
 
   useEffect(() => {
+    if (peloTelefone) return;
     if (parametros.servico && SERVICOS.includes(parametros.servico as ServicoId)) setConfigurando(parametros.servico as ServicoId);
-  }, [parametros]);
+  }, [parametros, peloTelefone]);
 
   const lista = SERVICOS.filter((id) => filtro === "todas" || CATEGORIA_SERVICO[id] === filtro);
 
@@ -264,11 +279,12 @@ export default function Conexoes() {
           </Botao>
         }
       />
-      <AvisoFaixa>{T.conexoes.avisoReal}</AvisoFaixa>
+      <AvisoFaixa>{peloTelefone ? T.conexoes.soNoComputador : T.conexoes.avisoReal}</AvisoFaixa>
       <Pilulas<Filtro> rotulo={T.conexoes.titulo} valor={filtro} aoMudar={setFiltro} opcoes={(Object.keys(T.conexoes.filtros) as Filtro[]).map((f) => ({ valor: f, rotulo: T.conexoes.filtros[f] }))} />
       <div className="grade">
         {lista.map((id) => {
           const c = conexoes.find((x) => x.id === id)!;
+          const salva = c.chaveSalva || Boolean(noComputador[id]?.temChave);
           const servico = T.conexoes.servicos[id];
           const ultimo = eventos.find((e) => e.servico === id);
           const status = pausadas && c.ligada ? "pausado" : c.status;
@@ -295,7 +311,9 @@ export default function Conexoes() {
                 )}
               </div>
               <div className="linha" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                {c.chaveSalva ? (
+                {peloTelefone ? (
+                  salva ? <LinhaAlternador rotulo={T.conexoes.ligada} ligado={c.ligada} aoMudar={(v) => atualizar(id, { ligada: v })} /> : null
+                ) : c.chaveSalva ? (
                   <>
                     <Botao pequeno variante="primario" icone={<Maximize2 size={13} />} onClick={() => abrirJanela(id)}>{T.ilha.abrirConexao}</Botao>
                     <Botao pequeno icone={<KeyRound size={13} />} onClick={() => setConfigurando(id)}>{T.janelaConexao.configurar}</Botao>
@@ -303,7 +321,7 @@ export default function Conexoes() {
                 ) : (
                   <Botao pequeno variante="primario" icone={<Plug size={13} />} onClick={() => setConfigurando(id)}>{T.conexoes.conectar}</Botao>
                 )}
-                {c.chaveSalva && (
+                {!peloTelefone && c.chaveSalva && (
                   <>
                     <Botao
                       pequeno
@@ -334,7 +352,7 @@ export default function Conexoes() {
           );
         })}
       </div>
-      <Configurar servico={configurando} aoFechar={() => setConfigurando(null)} />
+      <Configurar servico={peloTelefone ? null : configurando} aoFechar={() => setConfigurando(null)} />
     </>
   );
 }

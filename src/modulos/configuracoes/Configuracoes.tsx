@@ -3,7 +3,7 @@ import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Settings, Palette, PanelTop, PanelBottom, Timer, Users, Volume2, Gauge, Maximize, Keyboard, ShieldCheck, Database, Info, Wrench,
+  Settings, Palette, PanelTop, PanelBottom, Timer, Users, Volume2, Gauge, Maximize, Keyboard, ShieldCheck, Database, Info, Wrench, Cloud,
   GripVertical, Download, Upload, RotateCcw, Trash2, DatabaseBackup, SquareTerminal,
 } from "lucide-react";
 import { CabecalhoAba } from "../../componentes/CabecalhoAba";
@@ -25,12 +25,14 @@ import { DESTAQUE_PADRAO } from "../../janelas/area-de-trabalho/usarTema";
 import { EditorFoto } from "../../componentes/FotoPerfil";
 import { SeletorDeFundo } from "./SeletorDeFundo";
 import { SecaoClaudeCode } from "./SecaoClaudeCode";
+import { SecaoConta } from "./SecaoConta";
 import type { EstadoAgente, Rota } from "../../tipos";
 
 type Secao = keyof typeof T.configuracoes.secoes;
 
 const ICONES: Record<Secao, React.ReactNode> = {
   geral: <Settings size={15} />,
+  conta: <Cloud size={15} />,
   aparencia: <Palette size={15} />,
   ilha: <PanelTop size={15} />,
   dock: <PanelBottom size={15} />,
@@ -304,6 +306,7 @@ export default function Configuracoes() {
   );
 
   const conteudo: Record<Secao, React.ReactNode> = {
+    conta: <SecaoConta />,
     geral: (
       <>
         <div className="campo-grupo">

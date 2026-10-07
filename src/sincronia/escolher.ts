@@ -28,6 +28,9 @@ export const CHAVE_DE_DADOS = /^niko:[a-z0-9_-]{1,60}$/i;
 export const CHAVE_DA_SINCRONIA = "niko:sincronia";
 export const LIMITE_DO_VALOR = 900_000;
 
+/** Ficam neste aparelho: marcas internas, histórico de busca e caches. */
+const SO_NESTE_APARELHO = new Set(["niko:sincronia", "niko:migrado", "niko:busca-recentes", "niko:commits"]);
+
 export function chaveSincronizavel(chave: string, valor: string): boolean {
-  return chave !== CHAVE_DA_SINCRONIA && chave !== "niko:migrado" && CHAVE_DE_DADOS.test(chave) && valor.length <= LIMITE_DO_VALOR;
+  return !SO_NESTE_APARELHO.has(chave) && CHAVE_DE_DADOS.test(chave) && valor.length <= LIMITE_DO_VALOR;
 }

@@ -4,9 +4,9 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import projeto from "../../supabase/projeto.json";
 import { aoEditarLocal, aplicarRemoto, cabecalhoDoBanco, gravarChave, lerChave, listarChaves, momentoDaChave, salvarAgora } from "../ponte/armazenamento";
 import { ouvirSocial } from "../ponte/social";
-import { CHAVE_DA_SINCRONIA, chaveSincronizavel, escolher, type Ponta } from "./escolher";
-import { mesclarTexto } from "../ponte/mesclar";
-import { MOVEL } from "../desktop/desktop";
+import { CHAVE_DA_SINCRONIA, chaveSincronizavel, type Ponta } from "./escolher";
+import { instanteReal, reconciliar } from "./reconciliar";
+import { MOVEL, NATIVO } from "../desktop/desktop";
 
 interface Meta {
   base: Record<string, string>;
@@ -20,6 +20,11 @@ interface LinhaRemota {
 }
 
 type Fase = "parada" | "a-correr" | "feita" | "entrar" | "erro" | "sem-rede";
+
+/** O app do Windows fala com a ponte. O site, o iPhone e o Android falam direto com o Supabase. */
+export function sincronizaPeloTelefone() {
+  return MOVEL || !NATIVO;
+}
 
 export const useSincronia = create<{ fase: Fase; erro: string; em: string }>(() => ({ fase: "parada", erro: "", em: "" }));
 
@@ -57,6 +62,8 @@ async function peloTelefone() {
   const { data } = await supabase().auth.getSession();
   const usuario = data.session?.user;
   if (!usuario) return { precisaEntrar: true as const };
+  const { error: semPerfil } = await supabase().rpc("garantir_perfil");
+  if (semPerfil) throw new Error(semPerfil.message);
   const { data: linhas, error } = await supabase().from("dados_utilizador").select("chave, valor, atualizado_em").eq("user_id", usuario.id);
   if (error) throw new Error(error.message);
   const remotos = new Map<string, Ponta>();
@@ -70,26 +77,19 @@ async function peloTelefone() {
     if (valor === null || !chaveSincronizavel(chave, valor)) continue;
     const mudou = meta.base[chave] !== valor;
     const editado = momentoDaChave(chave);
-    const remoto = remotos.get(chave);
-    // No primeiro encontro, o que já está na conta entra. Se o telemóvel também editou entretanto, as duas versões juntam-se.
-    if (meta.base[chave] === undefined && remoto && editado > 0 && remoto.valor !== valor) {
-      const junto = mesclarTexto(undefined, valor, remoto.valor) ?? valor;
-      aplicarRemoto(chave, junto);
-      locais.set(chave, { valor: junto, em: Date.now() });
-      continue;
-    }
-    const em = !mudou ? meta.em[chave] ?? 0 : meta.base[chave] === undefined ? 0 : editado || Date.now();
+    const em = !mudou ? meta.em[chave] ?? editado ?? 0 : editado || Date.now();
     locais.set(chave, { valor, em });
   }
   const envios: { user_id: string; chave: string; valor: string; atualizado_em: string; dispositivo: string; apagado: boolean }[] = [];
   for (const chave of new Set([...locais.keys(), ...remotos.keys()])) {
-    const escolha = escolher(locais.get(chave) ?? null, remotos.get(chave) ?? null);
+    const escolha = reconciliar(locais.get(chave) ?? null, remotos.get(chave) ?? null, meta.base[chave]);
     if (!escolha) continue;
+    const em = instanteReal(escolha.em) ? escolha.em : Date.now();
     meta.base[chave] = escolha.valor;
-    meta.em[chave] = escolha.em;
+    meta.em[chave] = em;
     if (escolha.escreverLocal) aplicarRemoto(chave, escolha.valor);
     if (escolha.escreverRemoto) {
-      envios.push({ user_id: usuario.id, chave, valor: escolha.valor, atualizado_em: new Date(escolha.em).toISOString(), dispositivo: "android", apagado: false });
+      envios.push({ user_id: usuario.id, chave, valor: escolha.valor, atualizado_em: new Date(em).toISOString(), dispositivo: "android", apagado: false });
     }
   }
   if (envios.length > 0) {
@@ -123,7 +123,7 @@ function agendarSincronia(ms = 700) {
 }
 
 async function ouvirRemotoNoTelefone() {
-  if (!MOVEL || canalMovel) return;
+  if (!sincronizaPeloTelefone() || canalMovel) return;
   const { data } = await supabase().auth.getSession();
   const id = data.session?.user.id;
   if (!id) return;
@@ -149,8 +149,8 @@ export async function sincronizarAgora() {
   outraVez = false;
   useSincronia.setState({ fase: "a-correr", erro: "" });
   try {
-    const resultado = MOVEL ? await peloTelefone() : await peloComputador();
-    if (MOVEL && !resultado.precisaEntrar) void ouvirRemotoNoTelefone();
+    const resultado = sincronizaPeloTelefone() ? await peloTelefone() : await peloComputador();
+    if (sincronizaPeloTelefone() && !resultado.precisaEntrar) void ouvirRemotoNoTelefone();
     useSincronia.setState(resultado.precisaEntrar ? { fase: "entrar", erro: "", em: "" } : { fase: "feita", erro: "", em: new Date().toISOString() });
   } catch (e) {
     useSincronia.setState(semInternet(e) ? { fase: "sem-rede", erro: "" } : { fase: "erro", erro: (e as Error).message });
@@ -178,13 +178,15 @@ export function usarSincroniaNuvem() {
     const correr = () => void sincronizarAgora();
     const espera = window.setTimeout(correr, 4000);
     const intervalo = window.setInterval(correr, 30000);
+    const passagem = window.setInterval(correr, 5 * 60 * 1000);
     const pararEdicao = aoEditarLocal(() => agendarSincronia(700));
-    const pararSocial = MOVEL ? () => undefined : ouvirSocial((e) => { if (e.tipo === "dados") agendarSincronia(400); });
+    const pararSocial = sincronizaPeloTelefone() ? () => undefined : ouvirSocial((e) => { if (e.tipo === "dados") agendarSincronia(400); });
     window.addEventListener("focus", correr);
     window.addEventListener("online", correr);
     return () => {
       window.clearTimeout(espera);
       window.clearInterval(intervalo);
+      window.clearInterval(passagem);
       window.clearTimeout(temporizador);
       pararEdicao();
       pararSocial();
