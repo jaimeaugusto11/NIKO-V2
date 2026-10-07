@@ -34,10 +34,30 @@ let aCorrer = false;
 let outraVez = false;
 let temporizador = 0;
 
+const LIMITE_DO_PEDIDO_MS = 15000;
+const LIMITE_DA_RONDA_MS = 30000;
+
+/** O iPhone congela pedidos quando a app vai para segundo plano; sem limite, a sincronia fica parada até fechar a app. */
+function pedirComLimite(entrada: RequestInfo | URL, opcoes: RequestInit = {}): Promise<Response> {
+  const controlo = new AbortController();
+  const limite = window.setTimeout(() => controlo.abort(), LIMITE_DO_PEDIDO_MS);
+  opcoes.signal?.addEventListener("abort", () => controlo.abort());
+  return fetch(entrada, { ...opcoes, signal: controlo.signal }).finally(() => window.clearTimeout(limite));
+}
+
+function comLimite<T>(promessa: Promise<T>, ms: number): Promise<T> {
+  let limite = 0;
+  const esgotado = new Promise<never>((_, rejeitar) => {
+    limite = window.setTimeout(() => rejeitar(new Error("timeout")), ms);
+  });
+  return Promise.race([promessa, esgotado]).finally(() => window.clearTimeout(limite));
+}
+
 function supabase(): SupabaseClient {
   if (cliente) return cliente;
   cliente = createClient(projeto.url, projeto.chavePublica, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false, storageKey: "niko-sessao" },
+    global: { fetch: pedirComLimite },
   });
   return cliente;
 }
@@ -123,7 +143,10 @@ function agendarSincronia(ms = 700) {
 }
 
 async function ouvirRemotoNoTelefone() {
-  if (!sincronizaPeloTelefone() || canalMovel) return;
+  if (!sincronizaPeloTelefone()) return;
+  if (canalMovel && (canalMovel.state === "joined" || canalMovel.state === "joining")) return;
+  if (canalMovel) void supabase().removeChannel(canalMovel);
+  canalMovel = null;
   const { data } = await supabase().auth.getSession();
   const id = data.session?.user.id;
   if (!id) return;
@@ -149,7 +172,7 @@ export async function sincronizarAgora() {
   outraVez = false;
   useSincronia.setState({ fase: "a-correr", erro: "" });
   try {
-    const resultado = sincronizaPeloTelefone() ? await peloTelefone() : await peloComputador();
+    const resultado = await comLimite(sincronizaPeloTelefone() ? peloTelefone() : peloComputador(), LIMITE_DA_RONDA_MS);
     if (sincronizaPeloTelefone() && !resultado.precisaEntrar) void ouvirRemotoNoTelefone();
     useSincronia.setState(resultado.precisaEntrar ? { fase: "entrar", erro: "", em: "" } : { fase: "feita", erro: "", em: new Date().toISOString() });
   } catch (e) {
@@ -181,8 +204,13 @@ export function usarSincroniaNuvem() {
     const passagem = window.setInterval(correr, 5 * 60 * 1000);
     const pararEdicao = aoEditarLocal(() => agendarSincronia(700));
     const pararSocial = sincronizaPeloTelefone() ? () => undefined : ouvirSocial((e) => { if (e.tipo === "dados") agendarSincronia(400); });
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") correr();
+    };
     window.addEventListener("focus", correr);
     window.addEventListener("online", correr);
+    window.addEventListener("pageshow", correr);
+    document.addEventListener("visibilitychange", aoVoltar);
     return () => {
       window.clearTimeout(espera);
       window.clearInterval(intervalo);
@@ -192,6 +220,8 @@ export function usarSincroniaNuvem() {
       pararSocial();
       window.removeEventListener("focus", correr);
       window.removeEventListener("online", correr);
+      window.removeEventListener("pageshow", correr);
+      document.removeEventListener("visibilitychange", aoVoltar);
     };
   }, []);
 }
