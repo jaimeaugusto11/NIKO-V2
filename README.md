@@ -2,7 +2,7 @@
 
 <img src="src-tauri/icons/128x128@2x.png" alt="Logo do Niko" width="112" />
 
-# Niko
+# Niko 
 
 **Seu sistema de vida para Windows.**
 
