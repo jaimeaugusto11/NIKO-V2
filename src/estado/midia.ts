@@ -61,6 +61,16 @@ function aplicar(r: RespostaMidia, anterior: Faixa | null): Partial<EstadoMidia>
   };
 }
 
+const TOLERANCIA_POSICAO_S = 1.5;
+
+/** A consulta periódica devolve sempre um `lidoEm` novo; só vale a pena atualizar (e redesenhar) se algo visível mudou. */
+function mudouAVista(atual: EstadoMidia, novo: Partial<EstadoMidia>, agora: number): boolean {
+  const campos = ["disponivel", "faixa", "tocando", "podeAvancar", "podeVoltar", "podeBuscar"] as const;
+  if (campos.some((c) => c in novo && novo[c] !== atual[c])) return true;
+  if (novo.posicao === undefined) return false;
+  return Math.abs(posicaoAtual(atual, agora) - novo.posicao) > (atual.tocando ? TOLERANCIA_POSICAO_S : 0.01);
+}
+
 function nomeDoApp(id: string): string {
   const base = id.split("!").pop()?.replace(/\.exe$/i, "") ?? id;
   if (/spotify/i.test(id)) return "Spotify";
@@ -113,8 +123,8 @@ export const useMidia = create<EstadoMidia>()((set, get) => {
       try {
         const r = await pedir("");
         if (atual !== revisao) return;
-        if (r) set(aplicar(r, get().faixa));
-        else set({ disponivel: false, faixa: null, tocando: false });
+        const novo: Partial<EstadoMidia> = r ? aplicar(r, get().faixa) : { disponivel: false, faixa: null, tocando: false };
+        if (mudouAVista(get(), novo, Date.now())) set(novo);
       } finally { consultaEmAndamento = false; }
     },
     alternar: () => agir("alternar"),

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { garantirScript } from "./scriptsTemporarios";
+import { jsonAscii } from "./processoPowerShell";
 
 const CODIGO = `
 using System;
@@ -43,6 +44,7 @@ public static class NikoCredencial {
 
 const SCRIPT = `
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -TypeDefinition @'
 ${CODIGO}
 '@
@@ -73,8 +75,10 @@ function executar(entrada: Record<string, string>): Promise<{ ok?: boolean; valo
       processo.kill();
       rejeitar(new Error("tempo_credencial"));
     }, TEMPO_LIMITE_MS);
-    processo.stdout.on("data", (d) => (saida += d.toString()));
-    processo.stderr.on("data", (d) => (erro += d.toString()));
+    processo.stdout.setEncoding("utf8");
+    processo.stderr.setEncoding("utf8");
+    processo.stdout.on("data", (d: string) => (saida += d));
+    processo.stderr.on("data", (d: string) => (erro += d));
     processo.on("error", (e) => {
       clearTimeout(relogio);
       rejeitar(e);
@@ -88,7 +92,7 @@ function executar(entrada: Record<string, string>): Promise<{ ok?: boolean; valo
         rejeitar(new Error("resposta_invalida"));
       }
     });
-    processo.stdin.end(JSON.stringify(entrada));
+    processo.stdin.end(jsonAscii(entrada));
   });
 }
 

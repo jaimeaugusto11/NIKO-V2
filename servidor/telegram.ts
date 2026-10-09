@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { randomInt } from "node:crypto";
+import { setTimeout as esperar } from "node:timers/promises";
 import { pastaDados } from "./ia";
 import { lerSegredo } from "./segredos";
 
@@ -46,7 +47,17 @@ function salvarEstado(e: EstadoTelegram) {
   mkdirSync(pastaDados(), { recursive: true });
   const tmp = `${ARQUIVO()}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(e), "utf8");
-  renameSync(tmp, ARQUIVO());
+  // O antivírus ou o indexador às vezes seguram o ficheiro por instantes.
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      renameSync(tmp, ARQUIVO());
+      return;
+    } catch (erro) {
+      const codigo = (erro as NodeJS.ErrnoException).code;
+      if (tentativa >= 5 || (codigo !== "EPERM" && codigo !== "EBUSY")) throw erro;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * tentativa);
+    }
+  }
 }
 
 export function tokenValido(token: string): boolean {
@@ -96,8 +107,17 @@ async function responderAoChat(token: string, chat: number, texto: string) {
 }
 
 export async function tratarAtualizacao(token: string, a: Atualizacao) {
+  const nova = await interpretar(token, a);
+  // A mensagem só entra na fila depois de o deslocamento ficar gravado, para não ser lida duas vezes.
+  salvarEstado({ ...lerEstado(), deslocamento: a.update_id + 1 });
+  if (!nova) return;
+  if (fila.length >= MAXIMO_NA_FILA) fila.shift();
+  fila.push(nova);
+}
+
+async function interpretar(token: string, a: Atualizacao): Promise<MensagemTelegram | null> {
   const m = a.message;
-  if (!m || m.chat.type !== "private") return;
+  if (!m || m.chat.type !== "private") return null;
   const estado = lerEstado();
   const texto = (m.text ?? "").trim();
   if (!estado.chat) {
@@ -107,31 +127,38 @@ export async function tratarAtualizacao(token: string, a: Atualizacao) {
       salvarEstado({ ...estado, chat: m.chat.id, nomeDoChat: m.chat.first_name ?? m.chat.username ?? "", codigo: undefined });
       await responderAoChat(token, m.chat.id, "Pronto, este chat está ligado ao Niko. Mande uma tarefa, um gasto ou um lembrete. Exemplos: \"ligar pro banco amanhã 15h\", \"gastei 50 no mercado\", \"me lembra de pagar a luz sexta\".");
     }
-    return;
+    return null;
   }
-  if (m.chat.id !== estado.chat) return;
+  if (m.chat.id !== estado.chat) return null;
   if (!texto) {
     await responderAoChat(token, m.chat.id, "Por enquanto o Niko só entende mensagens de texto.");
-    return;
+    return null;
   }
-  if (fila.length >= MAXIMO_NA_FILA) fila.shift();
-  fila.push({ id: m.message_id, texto: texto.slice(0, 2000), data: new Date(m.date * 1000).toISOString() });
+  return { id: m.message_id, texto: texto.slice(0, 2000), data: new Date(m.date * 1000).toISOString() };
+}
+
+async function pausar(sinal: AbortSignal) {
+  await esperar(PAUSA_APOS_ERRO_MS, undefined, { signal: sinal }).catch(() => undefined);
 }
 
 async function rodar(sinal: AbortSignal) {
   while (!sinal.aborted) {
-    const token = await lerSegredo("conexao-telegram").catch(() => null);
-    if (!token) return;
+    let token: string | null;
+    try {
+      token = await lerSegredo("conexao-telegram");
+    } catch {
+      // No arranque o PowerShell do cofre pode demorar demais; tenta de novo em vez de desistir.
+      await pausar(sinal);
+      continue;
+    }
+    if (!token || sinal.aborted) return;
     try {
       const estado = lerEstado();
       const atualizacoes = await chamar<Atualizacao[]>(token, "getUpdates", { timeout: ESPERA_LONGA_SEG, offset: estado.deslocamento, allowed_updates: ["message"] }, AbortSignal.any([sinal, AbortSignal.timeout((ESPERA_LONGA_SEG + 10) * 1000)]));
-      for (const a of atualizacoes) {
-        await tratarAtualizacao(token, a);
-        salvarEstado({ ...lerEstado(), deslocamento: a.update_id + 1 });
-      }
+      for (const a of atualizacoes) await tratarAtualizacao(token, a);
     } catch {
       if (sinal.aborted) return;
-      await new Promise((r) => setTimeout(r, PAUSA_APOS_ERRO_MS));
+      await pausar(sinal);
     }
   }
 }

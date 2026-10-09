@@ -49,3 +49,16 @@ test("falha ao tocar não inventa uma reprodução", async () => {
   await useMidia.getState().alternar();
   assert.equal(useMidia.getState().tocando, false);
 });
+
+test("consulta periódica sem mudanças visíveis não redesenha a ilha", async () => {
+  globalThis.fetch = async () => Response.json({ ...estado(false), podeAvancar: true });
+  await useMidia.getState().sincronizar();
+  let avisos = 0;
+  const parar = useMidia.subscribe(() => avisos++);
+  await useMidia.getState().sincronizar();
+  assert.equal(avisos, 0);
+  globalThis.fetch = async () => Response.json({ ...estado(true), podeAvancar: true });
+  await useMidia.getState().sincronizar();
+  parar();
+  assert.equal(avisos, 1);
+});

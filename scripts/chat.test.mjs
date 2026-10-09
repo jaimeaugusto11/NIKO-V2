@@ -5,7 +5,7 @@ import { createServer } from "vite";
 const memoria = new Map();
 globalThis.BroadcastChannel = undefined;
 globalThis.localStorage = { getItem: (k) => memoria.get(k) ?? null, setItem: (k, v) => memoria.set(k, v), removeItem: (k) => memoria.delete(k) };
-globalThis.window = Object.assign(new EventTarget(), { location: { search: "" }, setTimeout, clearTimeout, requestAnimationFrame: (fn) => setTimeout(fn, 0), cancelAnimationFrame: clearTimeout });
+globalThis.window = Object.assign(new EventTarget(), { location: { search: "" }, setTimeout, clearTimeout, requestAnimationFrame: (fn) => setTimeout(fn, 0), cancelAnimationFrame: clearTimeout, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
 globalThis.fetch = async () => { throw new Error("Rede bloqueada nos testes"); };
 const servidor = await createServer({ configFile: false, server: { middlewareMode: true, hmr: false, watch: null }, appType: "custom", optimizeDeps: { noDiscovery: true } });
 after(() => servidor.close());

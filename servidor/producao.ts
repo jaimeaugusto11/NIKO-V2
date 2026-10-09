@@ -34,26 +34,40 @@ const servidor = createServer((req, res) => {
 process.on("uncaughtException", (e) => {
   process.stderr.write(`${new Date().toISOString()} erro: ${e.stack ?? e.message}\n`);
 });
-servidor.on("error", (e) => {
+process.on("unhandledRejection", (e) => {
+  process.stderr.write(`${new Date().toISOString()} promessa rejeitada: ${e instanceof Error ? e.stack ?? e.message : String(e)}\n`);
+});
+
+let tentativasDeAbrir = 0;
+const abrir = () => servidor.listen(porta, "127.0.0.1");
+servidor.on("error", (e: NodeJS.ErrnoException) => {
   process.stderr.write(`${new Date().toISOString()} falha ao abrir a porta ${porta}: ${e.message}\n`);
+  if (servidor.listening) return;
+  // A porta pode ainda estar presa pela ponte anterior, que está a fechar.
+  if ((e.code === "EADDRINUSE" || e.code === "EACCES") && ++tentativasDeAbrir <= 5) {
+    setTimeout(abrir, 1000);
+    return;
+  }
   process.exit(1);
 });
-servidor.listen(porta, "127.0.0.1", () => {
+servidor.once("listening", () => {
   process.stderr.write(`${new Date().toISOString()} ponte ouvindo em 127.0.0.1:${porta}\n`);
   iniciarConexoesDeFundo();
 });
+abrir();
 
 let encerrando = false;
 const encerrar = () => {
   if (encerrando) return;
   encerrando = true;
-  encerrarMidia();
-  encerrarJanelas();
-  encerrarControle();
-  encerrarSistema();
-  pararTelegram();
-  encerrarSocial();
-  fecharBanco();
+  setTimeout(() => process.exit(0), 1500).unref();
+  for (const passo of [encerrarMidia, encerrarJanelas, encerrarControle, encerrarSistema, pararTelegram, encerrarSocial, fecharBanco]) {
+    try {
+      passo();
+    } catch (e) {
+      process.stderr.write(`${new Date().toISOString()} erro ao encerrar (${passo.name}): ${(e as Error).message}\n`);
+    }
+  }
   servidor.close();
   process.exit(0);
 };
@@ -70,8 +84,9 @@ if (pai > 0) {
   setInterval(() => {
     try {
       process.kill(pai, 0);
-    } catch {
-      encerrar();
+    } catch (e) {
+      // EPERM quer dizer que o pai existe, só não o podemos sinalizar.
+      if ((e as NodeJS.ErrnoException).code === "ESRCH") encerrar();
     }
   }, 3000).unref();
 }

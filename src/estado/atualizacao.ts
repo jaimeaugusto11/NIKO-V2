@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { MOVEL, NATIVO } from "../desktop/desktop";
+import { JANELA, MOVEL, NATIVO, mostrarSistema } from "../desktop/desktop";
+import { salvarAgora } from "../ponte/armazenamento";
 import { tocarSom } from "../ponte/sons";
 import { T } from "../textos/textos";
 import { versaoMaisNova } from "../utilitarios/versoes";
@@ -28,6 +29,21 @@ interface EstadoAtualizacao {
 let pendente: Update | null = null;
 let pacoteMovel = "";
 let ouvinteInstalacao: ((evento: Event) => void) | null = null;
+let aInstalar = false;
+
+/** A ilha e o dock pedem à janela sistema; só ela instala, para não correrem duas instalações. */
+export const EVENTO_INSTALAR = "niko://instalar-atualizacao";
+
+async function gravarTudoAntesDeSair() {
+  try {
+    const { emit } = await import("@tauri-apps/api/event");
+    await emit("niko://saindo");
+  } catch {
+    // segue: pelo menos esta janela grava
+  }
+  await salvarAgora().catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 600));
+}
 
 const RELEASE = "https://api.github.com/repos/jaimeaugusto11/NIKO-V2/releases/latest";
 
@@ -134,12 +150,26 @@ export const useAtualizacao = create<EstadoAtualizacao>()((set, get) => ({
       ponte.instalarApk(pacoteMovel);
       return;
     }
-    if (!pendente) return;
+    if (NATIVO && JANELA !== "sistema") {
+      try {
+        const { emitTo } = await import("@tauri-apps/api/event");
+        await emitTo("sistema", EVENTO_INSTALAR);
+        void mostrarSistema();
+      } catch {
+        set({ fase: "erro", erro: T.atualizacao.erroInstalacao });
+      }
+      return;
+    }
+    if (!pendente) await get().verificar();
+    const atualizacao = pendente;
+    if (!atualizacao || aInstalar) return;
+    aInstalar = true;
     set({ fase: "baixando", progresso: 0, erro: "" });
     let total = 0;
     let baixado = 0;
     try {
-      await pendente.downloadAndInstall((e) => {
+      await gravarTudoAntesDeSair();
+      await atualizacao.downloadAndInstall((e) => {
         if (e.event === "Started") total = e.data?.contentLength ?? 0;
         if (e.event === "Progress") {
           baixado += e.data?.chunkLength ?? 0;
@@ -151,6 +181,7 @@ export const useAtualizacao = create<EstadoAtualizacao>()((set, get) => ({
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch {
+      aInstalar = false;
       set({ fase: "erro", erro: T.atualizacao.erroInstalacao });
       void tocarSom("error", "avisos");
     }

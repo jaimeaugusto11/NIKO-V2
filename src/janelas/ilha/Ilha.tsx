@@ -103,6 +103,34 @@ function useAgora(intervalo: number, ativo: boolean) {
   return agora;
 }
 
+/** Fica num componente à parte para o tique de 100 ms não redesenhar a ilha inteira. */
+function ContagemDeFecho({ ativa, segundos, reinicio, raiz, aoFechar }: { ativa: boolean; segundos: number; reinicio: string; raiz: React.RefObject<HTMLDivElement | null>; aoFechar: () => void }) {
+  const [restante, setRestante] = useState<number | null>(null);
+  useEffect(() => {
+    if (!ativa) {
+      setRestante(null);
+      return;
+    }
+    const fim = Date.now() + segundos * 1000;
+    const t = window.setInterval(() => {
+      const focoDentro = raiz.current?.contains(document.activeElement) && document.activeElement?.tagName === "INPUT";
+      if (focoDentro) return;
+      const r = fim - Date.now();
+      if (r <= 0) {
+        aoFechar();
+        void tocarSom("close");
+        setRestante(null);
+        return;
+      }
+      // Só a barra dos últimos 10 s é visível; antes disso não vale a pena redesenhar.
+      if (r <= 10000) setRestante(r);
+    }, 100);
+    return () => window.clearInterval(t);
+  }, [ativa, segundos, reinicio, raiz, aoFechar]);
+  if (restante == null || restante > 10000) return null;
+  return <span className="ilha-contagem" style={{ width: (restante / 10000) * 160 }} aria-hidden="true" />;
+}
+
 export function Ilha() {
   const cfg = useConfig((s) => s.ilha);
   const somLigado = useConfig((s) => s.sons.ligado);
@@ -127,7 +155,9 @@ export function Ilha() {
   const irPara = useInterface((s) => s.irPara);
   const agentes = useAgentes();
   const pomodoro = usePomodoro();
-  const midia = useMidia();
+  const midiaTocando = useMidia((s) => s.tocando);
+  const midiaFaixa = useMidia((s) => s.faixa);
+  const midia = { tocando: midiaTocando, faixa: midiaFaixa };
   usarClaudeCode(cfg.ativa && cfg.blocos.claude, PRINCIPAL);
   const pedidosClaude = useClaudeCode((s) => s.pedidos);
   const minuto = useAgora(60_000, true);
@@ -136,7 +166,12 @@ export function Ilha() {
   const raiz = useRef<HTMLDivElement>(null);
   const corpoIlha = useRef<HTMLDivElement>(null);
   const [sobre, setSobre] = useState(false);
-  const atualizacao = useAtualizacao();
+  const atualizacao = {
+    fase: useAtualizacao((s) => s.fase),
+    versao: useAtualizacao((s) => s.versao),
+    progresso: useAtualizacao((s) => s.progresso),
+    instalar: useAtualizacao((s) => s.instalar),
+  };
   useEffect(() => {
     if (!PRINCIPAL) return;
     const primeira = window.setTimeout(() => void useAtualizacao.getState().verificar(), 15000);
@@ -150,7 +185,6 @@ export function Ilha() {
   usarCursorFora(useCallback(() => setSobre(false), []));
   const [barraEmUso, setBarraEmUso] = useState(false);
   const aparencia = usarAparenciaDeBorda(cfg.fundo, cfg.opacidade);
-  const [restanteFechar, setRestanteFechar] = useState<number | null>(null);
   const [tamanhoAnterior, setTamanhoAnterior] = useState<{ w: number; h: number; transicao: typeof MOLA | typeof FECHAR }>({ w: 0, h: 0, transicao: MOLA });
   const relogioHover = useRef<number | undefined>(undefined);
   const relogioRevelada = useRef<number | undefined>(undefined);
@@ -202,27 +236,6 @@ export function Ilha() {
   useEffect(() => {
     if (estado === "expandida" && abaAtual === "avisos") useAgentes.getState().marcarVistos();
   }, [estado, abaAtual, alertas.length]);
-
-  useEffect(() => {
-    if (estadoEfetivo !== "expandida" || sobre || cfg.fechamentoSeg === 0 || abaAtual === "claude") {
-      setRestanteFechar(null);
-      return;
-    }
-    const fim = Date.now() + cfg.fechamentoSeg * 1000;
-    const t = window.setInterval(() => {
-      const focoDentro = raiz.current?.contains(document.activeElement) && document.activeElement?.tagName === "INPUT";
-      if (focoDentro) return;
-      const r = fim - Date.now();
-      if (r <= 0) {
-        recolher();
-        void tocarSom("close");
-        setRestanteFechar(null);
-        return;
-      }
-      setRestanteFechar(r);
-    }, 100);
-    return () => window.clearInterval(t);
-  }, [estadoEfetivo, sobre, cfg.fechamentoSeg, recolher, abaAtual]);
 
   useEffect(() => {
     if (estadoEfetivo !== "expandida") return;
@@ -613,9 +626,7 @@ export function Ilha() {
             </AnimatePresence>
           </div>
           <PersonagemContinuo ilha={corpoIlha} posicao={estadoEfetivo === "expandida" ? "expandida" : "compacta"} ativo={estadoEfetivo !== "escondida"} escala={escala} agente={agenteContinuo} estado={estadoEfetivo === "compacta" ? estadoCalmo(estadoDoAgente(agentes, agenteContinuo)) : estadoDoAgente(agentes, agenteContinuo)} rotulo={nomes[agenteContinuo]} destinoKey={estadoEfetivo === "expandida" ? abaAtual : compacta.tipo} />
-          {restanteFechar != null && restanteFechar <= 10000 && (
-            <span className="ilha-contagem" style={{ width: (restanteFechar / 10000) * 160 }} aria-hidden="true" />
-          )}
+          <ContagemDeFecho ativa={estadoEfetivo === "expandida" && !sobre && cfg.fechamentoSeg !== 0 && abaAtual !== "claude"} segundos={cfg.fechamentoSeg} reinicio={abaAtual} raiz={raiz} aoFechar={recolher} />
         </motion.div>
       </div>
     </>

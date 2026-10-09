@@ -247,6 +247,7 @@ export function usarAppsAbertos(ativo: boolean): [AppAberto[], () => void] {
     if (!NATIVO || !ativo) return;
     let vivo = true;
     const ler = async () => {
+      if (document.visibilityState === "hidden") return;
       try {
         const r = await fetch("/ponte/janelas", { headers: { "x-niko": "1" } });
         if (!r.ok) return;
@@ -259,9 +260,12 @@ export function usarAppsAbertos(ativo: boolean): [AppAberto[], () => void] {
     };
     void ler();
     const t = window.setInterval(() => void ler(), 2000);
+    const aoVoltar = () => void ler();
+    document.addEventListener("visibilitychange", aoVoltar);
     return () => {
       vivo = false;
       window.clearInterval(t);
+      document.removeEventListener("visibilitychange", aoVoltar);
     };
   }, [ativo, versao]);
   return [apps, () => setVersao((v) => v + 1)];

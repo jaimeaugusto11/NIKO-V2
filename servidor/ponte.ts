@@ -88,7 +88,15 @@ export const rotas: Connect.NextHandleFunction = async (req, res, proximo) => {
   const url = new URL(req.url ?? "/", "http://localhost");
   if (!url.pathname.startsWith("/ponte/")) return proximo();
   if (!hostLocal(req)) return responder(res, 403, { erro: "host_nao_permitido" });
-  if (ehRotaDoGancho(url.pathname) && req.method === "POST") return receberEventoDoGancho(req, res);
+  if (ehRotaDoGancho(url.pathname) && req.method === "POST") {
+    try {
+      return await receberEventoDoGancho(req, res);
+    } catch {
+      if (!res.headersSent) return responder(res, 500, { erro: "falha_no_gancho" });
+      res.end();
+      return;
+    }
+  }
   if (!origemConfiavel(req)) return responder(res, 403, { erro: "origem_nao_permitida" });
   const caminho = url.pathname.slice("/ponte".length);
 

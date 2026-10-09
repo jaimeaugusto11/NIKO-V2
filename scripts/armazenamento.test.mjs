@@ -98,3 +98,43 @@ test("mudanças simultâneas de duas janelas na mesma área são fundidas, sem p
   await envio;
   assert.deepEqual(JSON.parse(banco.get("niko:rotina-teste")).state.tarefas.map((t) => t.id).sort(), ["a", "b", "c"]);
 });
+
+test("recarregar não repõe um valor antigo da ponte por cima de um recebido de outra janela", async () => {
+  lerAntesDe = new Map([["niko:z", "antigo"]]);
+  let soltarLeitura;
+  const fetchOriginal = globalThis.fetch;
+  globalThis.fetch = async (url, opcoes = {}) => {
+    if (opcoes.method === "POST") return fetchOriginal(url, opcoes);
+    await new Promise((r) => (soltarLeitura = r));
+    return fetchOriginal(url, opcoes);
+  };
+  window.dispatchEvent(new Event("focus"));
+  await esperar();
+  canais[0].receber({ origem: "outra-janela", chave: "niko:z", valor: "novo" });
+  soltarLeitura();
+  await esperar();
+  assert.equal(armazenamento.lerChave("niko:z"), "novo");
+  globalThis.fetch = fetchOriginal;
+  lerAntesDe = null;
+});
+
+test("dados do telemóvel avisam as outras janelas e fundem com uma edição local por enviar", async () => {
+  const [canal] = canais;
+  armazenamento.aplicarRemoto("niko:telefone", "do-telemovel");
+  assert.equal(armazenamento.lerChave("niko:telefone"), "do-telemovel");
+  assert.deepEqual(canal.enviadas.at(-1), { origem: canal.enviadas.at(-1).origem, chave: "niko:telefone", valor: "do-telemovel" });
+
+  const tarefas = (...ids) => JSON.stringify({ state: { tarefas: ids.map((id) => ({ id, titulo: id })) }, version: 0 });
+  armazenamento.gravarChave("niko:rotina-tel", tarefas("a"));
+  let envio = armazenamento.salvarAgora();
+  liberarPost();
+  await envio;
+  armazenamento.gravarChave("niko:rotina-tel", tarefas("a", "local"));
+  armazenamento.aplicarRemoto("niko:rotina-tel", tarefas("a", "remota"));
+  const ids = JSON.parse(armazenamento.lerChave("niko:rotina-tel")).state.tarefas.map((t) => t.id).sort();
+  assert.deepEqual(ids, ["a", "local", "remota"]);
+  assert.deepEqual(JSON.parse(canal.enviadas.at(-1).valor).state.tarefas.map((t) => t.id).sort(), ["a", "local", "remota"]);
+  envio = armazenamento.salvarAgora();
+  liberarPost();
+  await envio;
+});

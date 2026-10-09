@@ -4,6 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { extname, join, parse } from "node:path";
 import { randomUUID } from "node:crypto";
+import { pipeline } from "node:stream";
 import { pastaDados } from "./ia";
 
 export const LIMITE_ARQUIVO = 300 * 1024 * 1024;
@@ -154,7 +155,7 @@ export function enviarConteudo(res: ServerResponse, banco: string, materia: stri
   res.setHeader("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(nome)}`);
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("cache-control", "no-store");
-  createReadStream(caminho).pipe(res);
+  pipeline(createReadStream(caminho), res, () => undefined);
 }
 
 export function excluirArquivo(banco: string, materia: string, id: string) {

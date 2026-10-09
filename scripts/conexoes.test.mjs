@@ -1,7 +1,7 @@
 import test, { after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "vite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,7 @@ process.env.APPDATA = pastaTemporaria;
 const memoria = new Map();
 globalThis.BroadcastChannel = undefined;
 globalThis.localStorage = { getItem: (k) => memoria.get(k) ?? null, setItem: (k, v) => memoria.set(k, v), removeItem: (k) => memoria.delete(k) };
-globalThis.window = Object.assign(new EventTarget(), { location: { search: "" }, setTimeout, clearTimeout, requestAnimationFrame: (fn) => setTimeout(fn, 0), cancelAnimationFrame: clearTimeout });
+globalThis.window = Object.assign(new EventTarget(), { location: { search: "" }, setTimeout, clearTimeout, requestAnimationFrame: (fn) => setTimeout(fn, 0), cancelAnimationFrame: clearTimeout, matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
 
 let respostas = [];
 const pedidos = [];
@@ -161,4 +161,24 @@ test("Telegram só liga o chat que mandar o código e ignora qualquer outro", as
   await telegram.tratarAtualizacao(token, { update_id: 4, message: { message_id: 4, date: 1790000000, text: "grupo", chat: { id: 111, type: "group" } } });
   assert.deepEqual(telegram.pegarPendentes().map((m) => m.texto), ["comprar pão"]);
   assert.equal(telegram.pegarPendentes().length, 0);
+  const gravado = JSON.parse(readFileSync(join(pastaTemporaria, "com.niko.desktop", "telegram.json"), "utf8"));
+  assert.equal(gravado.deslocamento, 5);
+});
+
+test("o JSON para o PowerShell só leva ASCII e continua a ser o mesmo valor", async () => {
+  const { jsonAscii } = await servidor.ssrLoadModule("/servidor/processoPowerShell.ts");
+  const valor = { ssid: "Café São João", senha: "ação€😀", del: "\u007f", n: 1 };
+  const texto = jsonAscii(valor);
+  assert.match(texto, /^[\x00-\x7e]*$/);
+  assert.ok(texto.includes("\\u00e9"));
+  assert.deepEqual(JSON.parse(texto), valor);
+});
+
+test("o script do PowerShell volta a ser gravado se alguém o apagar", async () => {
+  const { garantirScript } = await servidor.ssrLoadModule("/servidor/scriptsTemporarios.ts");
+  const caminho = garantirScript("niko-teste", "Write-Output 1");
+  assert.ok(caminho.startsWith(pastaTemporaria));
+  rmSync(caminho);
+  assert.equal(garantirScript("niko-teste", "Write-Output 1"), caminho);
+  assert.equal(readFileSync(caminho, "utf8"), "Write-Output 1");
 });

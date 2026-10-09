@@ -24,6 +24,11 @@ export const T = {
     ponteFalhouDica: "Feche pelo ícone da bandeja e abra de novo. Se continuar, o erro está em %APPDATA%\\com.niko.desktop\\ponte.log e niko.log.",
     nome: "Niko",
     versao: manifesto.version,
+    tentarDeNovo: "Tentar de novo",
+    erroJanela: "Algo correu mal nesta janela.",
+    recarregar: "Recarregar",
+    armazenamentoFalhou: "Não foi possível guardar as alterações. O Niko volta a tentar sozinho.",
+    armazenamentoCheio: "O espaço local está cheio; as alterações podem não ficar guardadas.",
   },
   movel: {
     abas: { hoje: "Hoje", agentes: "Agentes", agenda: "Agenda", mais: "Mais" },

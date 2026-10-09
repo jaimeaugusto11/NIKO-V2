@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { garantirScript } from "./scriptsTemporarios";
-import { criarProcessoPowerShell } from "./processoPowerShell";
+import { criarProcessoPowerShell, jsonAscii } from "./processoPowerShell";
 
 const SCRIPT = String.raw`
 param([switch]$Continuo)
@@ -245,8 +245,10 @@ function executar<T>(entrada: Record<string, unknown>, limiteMs = 20000): Promis
     let saida = "";
     let erro = "";
     const relogio = setTimeout(() => processo.kill(), limiteMs);
-    processo.stdout.on("data", (d) => (saida += d.toString("utf8")));
-    processo.stderr.on("data", (d) => (erro += d.toString()));
+    processo.stdout.setEncoding("utf8");
+    processo.stderr.setEncoding("utf8");
+    processo.stdout.on("data", (d: string) => (saida += d));
+    processo.stderr.on("data", (d: string) => (erro += d));
     processo.on("error", rejeitar);
     processo.on("close", (codigo) => {
       clearTimeout(relogio);
@@ -257,7 +259,7 @@ function executar<T>(entrada: Record<string, unknown>, limiteMs = 20000): Promis
         rejeitar(new Error("resposta_invalida"));
       }
     });
-    processo.stdin.end(JSON.stringify(entrada));
+    processo.stdin.end(jsonAscii(entrada));
   });
 }
 

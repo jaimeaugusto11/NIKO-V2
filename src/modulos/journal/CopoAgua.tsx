@@ -5,6 +5,8 @@ import { Botao, Cartao, Campo } from "../../componentes/basicos";
 import { useRotina, DIA_VAZIO } from "../../estado/rotina";
 import { useConfig } from "../../estado/configuracoes";
 import { tocarSom } from "../../ponte/sons";
+import { salvarAgora } from "../../ponte/armazenamento";
+import { ouvirEvento } from "../../desktop/desktop";
 import { T } from "../../textos/textos";
 
 const BASE = 168;
@@ -43,6 +45,34 @@ export function CopoAgua({ data }: { data: string }) {
   };
 
   useEffect(() => () => gravarPendente(), [data]);
+
+  // Os copos ainda no temporizador não podem perder-se se a janela esconder ou o Niko fechar.
+  const gravarRef = useRef(gravarPendente);
+  gravarRef.current = gravarPendente;
+  useEffect(() => {
+    const gravarJa = () => {
+      if (!pendente.current) return;
+      gravarRef.current();
+      void salvarAgora();
+    };
+    const aoEsconder = () => {
+      if (document.visibilityState === "hidden") gravarJa();
+    };
+    document.addEventListener("visibilitychange", aoEsconder);
+    window.addEventListener("pagehide", gravarJa);
+    let ativo = true;
+    let desligar: () => void = () => undefined;
+    void ouvirEvento("niko://saindo", gravarJa).then((f) => {
+      if (ativo) desligar = f;
+      else f();
+    });
+    return () => {
+      ativo = false;
+      desligar();
+      document.removeEventListener("visibilitychange", aoEsconder);
+      window.removeEventListener("pagehide", gravarJa);
+    };
+  }, []);
 
   const adicionar = (quantidade: number) => {
     if (quantidade > 0) {

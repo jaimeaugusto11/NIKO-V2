@@ -57,13 +57,42 @@ function publicarConfiguracao(banco: string, linhas: LinhaLocal[]) {
   return lerLinhas(banco);
 }
 
-export async function sincronizarDados(banco = "") {
+type Resultado = Awaited<ReturnType<typeof sincronizarAgora>>;
+const emCurso = new Map<string, Promise<Resultado>>();
+const naFila = new Map<string, Promise<Resultado>>();
+
+/** Uma sincronia de cada vez por banco; quem chega a meio espera e partilha a seguinte. */
+export function sincronizarDados(banco = ""): Promise<Resultado> {
+  const seguinte = naFila.get(banco);
+  if (seguinte) return seguinte;
+  const corrente = emCurso.get(banco);
+  if (!corrente) return comecar(banco);
+  const encadeada = corrente
+    .catch(() => undefined)
+    .then(() => {
+      naFila.delete(banco);
+      return comecar(banco);
+    });
+  naFila.set(banco, encadeada);
+  return encadeada;
+}
+
+function comecar(banco: string): Promise<Resultado> {
+  const atual = sincronizarAgora(banco).finally(() => {
+    if (emCurso.get(banco) === atual) emCurso.delete(banco);
+  });
+  emCurso.set(banco, atual);
+  return atual;
+}
+
+async function sincronizarAgora(banco: string) {
   const sessao = await clienteAutenticado();
   if (!sessao) return { precisaEntrar: true as const };
   const { error: semPerfil } = await sessao.supabase.rpc("garantir_perfil");
   if (semPerfil) throw new Error(semPerfil.message);
   const linhas = publicarConfiguracao(banco, lerLinhas(banco));
   const meta = lerMeta(linhas);
+  const versaoInicial = new Map(linhas.map((l) => [l.chave, l.atualizado]));
   const locais = new Map<string, Ponta>();
   for (const linha of linhas) {
     if (!chaveSincronizavel(linha.chave, linha.valor)) continue;
@@ -109,6 +138,11 @@ export async function sincronizarDados(banco = "") {
   if (envios.length > 0) {
     const { error: falha } = await sessao.supabase.from("dados_utilizador").upsert(envios, { onConflict: "user_id,chave" });
     if (falha) throw new Error(falha.message);
+  }
+  // O que o utilizador mudou enquanto a rede respondia não é pisado; segue na próxima sincronia.
+  const versaoAtual = new Map(lerLinhas(banco).map((l) => [l.chave, l.atualizado]));
+  for (const chave of Object.keys(escritos)) {
+    if (versaoAtual.get(chave) !== versaoInicial.get(chave)) delete escritos[chave];
   }
   gravar({ ...escritos, [CHAVE_DA_SINCRONIA]: JSON.stringify(meta) }, banco);
   return { precisaEntrar: false as const, recebidas: escritos, enviadas: envios.length };

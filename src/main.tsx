@@ -13,26 +13,41 @@ import "./estilos/sistema.css";
 import "./estilos/modulos.css";
 import { iniciarArmazenamento } from "./ponte/armazenamento";
 import { JANELA, MOVEL, NATIVO, prepararPonte, desviarLinksExternos } from "./desktop/desktop";
+import { LimiteDeErro } from "./desktop/LimiteDeErro";
 import { T } from "./textos/textos";
 
 document.documentElement.dataset.tema = "claro";
 
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function mostrarFalhaDaPonte(raiz: HTMLElement) {
+  raiz.innerHTML = `<div class="falha-ponte"><h1>${T.app.ponteFalhou}</h1><p>${T.app.ponteFalhouDica}</p><p><button type="button" class="botao botao-primario">${T.app.tentarDeNovo}</button></p></div>`;
+  raiz.querySelector("button")?.addEventListener("click", () => window.location.reload());
+  // Continua a sondar; quando a ponte responder, recomeça do zero.
+  const sondar = async () => {
+    if ((await iniciarArmazenamento()) === "banco") window.location.reload();
+    else window.setTimeout(() => void sondar(), 5000);
+  };
+  window.setTimeout(() => void sondar(), 5000);
+}
+
 async function iniciar() {
-  if (JANELA === "ilha" || JANELA === "dock") document.documentElement.classList.add("janela-sobreposta");
+  const sobreposta = JANELA === "ilha" || JANELA === "dock";
+  if (sobreposta) document.documentElement.classList.add("janela-sobreposta");
   await prepararPonte();
   desviarLinksExternos();
   let modo = "local";
-  const tentativas = NATIVO && !MOVEL ? 120 : 1;
+  const tentativas = NATIVO && !MOVEL ? (sobreposta ? Infinity : 120) : 1;
   for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
     modo = await iniciarArmazenamento();
     if (modo === "banco" || tentativa === tentativas) break;
-    await new Promise((r) => setTimeout(r, 500));
+    // A ilha e o dock não têm onde mostrar o erro: esperam pela ponte o tempo que for preciso.
+    await esperar(sobreposta ? Math.min(500 * 2 ** Math.min(tentativa - 1, 5), 10000) : 500);
   }
   const raiz = document.getElementById("raiz");
   if (!raiz) return;
   if (NATIVO && !MOVEL && modo !== "banco") {
-    if (JANELA !== "sistema") return;
-    raiz.innerHTML = `<div class="falha-ponte"><h1>${T.app.ponteFalhou}</h1><p>${T.app.ponteFalhouDica}</p></div>`;
+    if (JANELA === "sistema") mostrarFalhaDaPonte(raiz);
     return;
   }
   let Raiz: () => React.ReactElement;
@@ -43,9 +58,14 @@ async function iniciar() {
     const apps = await import("./desktop/Aplicativos");
     Raiz = JANELA === "ilha" ? apps.AppIlha : JANELA === "dock" ? apps.AppDock : apps.AppSistema;
   }
-  createRoot(raiz).render(
+  createRoot(raiz, {
+    onUncaughtError: (erro, info) => console.error("Erro não tratado na interface", erro, info.componentStack),
+    onCaughtError: (erro, info) => console.error("Erro apanhado na interface", erro, info.componentStack),
+  }).render(
     <StrictMode>
-      <Raiz />
+      <LimiteDeErro tipo={NATIVO && sobreposta ? "sobreposta" : "sistema"}>
+        <Raiz />
+      </LimiteDeErro>
     </StrictMode>,
   );
   if (!NATIVO && import.meta.env.PROD && "serviceWorker" in navigator) {

@@ -29,7 +29,7 @@ function abrir(nome = ""): DatabaseSync {
   mkdirSync(pastaDados(), { recursive: true });
   const arquivo = caminhoBanco(nome);
   const db = new DatabaseSync(arquivo);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;");
+  db.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA journal_size_limit = 4194304;");
   db.exec("CREATE TABLE IF NOT EXISTS meta (chave TEXT PRIMARY KEY, valor TEXT NOT NULL)");
   const versao = Number((db.prepare("SELECT valor FROM meta WHERE chave = 'versao'").get() as { valor?: string } | undefined)?.valor ?? 0);
   if (versao < VERSAO) {
@@ -57,7 +57,7 @@ export function gravar(itens: Record<string, string | null>, nome = "") {
   const inserir = db.prepare("INSERT INTO dados (chave, valor, atualizado) VALUES (?, ?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor, atualizado = excluded.atualizado");
   const apagar = db.prepare("DELETE FROM dados WHERE chave = ?");
   const agora = Date.now();
-  db.exec("BEGIN");
+  db.exec("BEGIN IMMEDIATE");
   try {
     for (const [chave, valor] of Object.entries(itens)) {
       if (!CHAVE_VALIDA.test(chave)) throw new Error("chave_invalida");
@@ -67,7 +67,7 @@ export function gravar(itens: Record<string, string | null>, nome = "") {
     }
     db.exec("COMMIT");
   } catch (e) {
-    db.exec("ROLLBACK");
+    if (db.isTransaction) db.exec("ROLLBACK");
     throw e;
   }
 }
@@ -88,6 +88,13 @@ export function backupManual(nome = ""): string {
 }
 
 export function fecharBanco() {
-  for (const db of bancos.values()) db.close();
+  for (const db of bancos.values()) {
+    try {
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } catch {
+      // Outro processo pode estar a ler; o SQLite faz o checkpoint mais tarde.
+    }
+    db.close();
+  }
   bancos.clear();
 }

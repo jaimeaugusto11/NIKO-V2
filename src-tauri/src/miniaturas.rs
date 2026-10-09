@@ -49,8 +49,10 @@ pub fn miniaturas_janelas(janela: WebviewWindow, itens: Vec<Miniatura>, estado: 
         }
     }
 
+    // Também descarta miniaturas de docks já destruídos (monitor desligado, janela recarregada).
     registradas.retain(|(dono, fonte), miniatura| {
-        let manter = *dono != dock || pedidas.contains_key(fonte);
+        let dono_vivo = unsafe { IsWindow(Some(HWND(*dono as *mut core::ffi::c_void))) }.as_bool();
+        let manter = dono_vivo && (*dono != dock || pedidas.contains_key(fonte));
         if !manter {
             let _ = unsafe { DwmUnregisterThumbnail(*miniatura) };
         }
@@ -78,6 +80,10 @@ pub fn miniaturas_janelas(janela: WebviewWindow, itens: Vec<Miniatura>, estado: 
             fSourceClientAreaOnly: false.into(),
             ..Default::default()
         };
-        let _ = unsafe { DwmUpdateThumbnailProperties(miniatura, &propriedades) };
+        if unsafe { DwmUpdateThumbnailProperties(miniatura, &propriedades) }.is_err() {
+            // A miniatura deixou de ser válida; volta a ser registada no próximo pedido.
+            let _ = unsafe { DwmUnregisterThumbnail(miniatura) };
+            registradas.remove(&(dock, fonte));
+        }
     }
 }

@@ -41,8 +41,14 @@ const LIMITE_DA_RONDA_MS = 30000;
 function pedirComLimite(entrada: RequestInfo | URL, opcoes: RequestInit = {}): Promise<Response> {
   const controlo = new AbortController();
   const limite = window.setTimeout(() => controlo.abort(), LIMITE_DO_PEDIDO_MS);
-  opcoes.signal?.addEventListener("abort", () => controlo.abort());
-  return fetch(entrada, { ...opcoes, signal: controlo.signal }).finally(() => window.clearTimeout(limite));
+  const externo = opcoes.signal;
+  const abortar = () => controlo.abort();
+  if (externo?.aborted) controlo.abort();
+  else externo?.addEventListener("abort", abortar, { once: true });
+  return fetch(entrada, { ...opcoes, signal: controlo.signal }).finally(() => {
+    window.clearTimeout(limite);
+    externo?.removeEventListener("abort", abortar);
+  });
 }
 
 function comLimite<T>(promessa: Promise<T>, ms: number): Promise<T> {

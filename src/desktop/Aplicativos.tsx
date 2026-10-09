@@ -15,12 +15,50 @@ import { useServicos } from "../servicos/servicos";
 import { PRINCIPAL, janelaAtual, ouvirComandos, ouvirEvento, sincronizarInicioComWindows } from "./desktop";
 import { usarSincronia } from "./sincronia";
 import { usarSincroniaNuvem } from "../sincronia/sincronizar";
+import { EVENTO_INSTALAR, useAtualizacao } from "../estado/atualizacao";
+import { T } from "../textos/textos";
+import { LimiteDeErro } from "./LimiteDeErro";
+
+function ouvirNaJanela(nome: string, fn: () => void): () => void {
+  let ativo = true;
+  let desligar: () => void = () => undefined;
+  void ouvirEvento(nome, fn).then((f) => {
+    if (ativo) desligar = f;
+    else f();
+  });
+  return () => {
+    ativo = false;
+    desligar();
+  };
+}
+
+const INTERVALO_AVISO_ARMAZENAMENTO_MS = 60000;
+
+function usarAvisosDeArmazenamento() {
+  useEffect(() => {
+    let ultimo = 0;
+    const avisar = (texto: string) => () => {
+      if (Date.now() - ultimo < INTERVALO_AVISO_ARMAZENAMENTO_MS) return;
+      ultimo = Date.now();
+      useInterface.getState().avisar(texto);
+    };
+    const falhou = avisar(T.app.armazenamentoFalhou);
+    const cheio = avisar(T.app.armazenamentoCheio);
+    window.addEventListener("niko:armazenamento-falhou", falhou);
+    window.addEventListener("niko:armazenamento-cheio", cheio);
+    return () => {
+      window.removeEventListener("niko:armazenamento-falhou", falhou);
+      window.removeEventListener("niko:armazenamento-cheio", cheio);
+    };
+  }, []);
+}
 
 export function AppSistema() {
   usarTema();
   usarAtalhos();
   usarSincronia();
   usarSincroniaNuvem();
+  usarAvisosDeArmazenamento();
   const janelas = useInterface((s) => s.janelasConexao);
   const primeira = useConfig((s) => s.primeiraExecucaoFeita);
   const iniciarComWindows = useConfig((s) => s.iniciarComWindows);
@@ -41,11 +79,8 @@ export function AppSistema() {
     [],
   );
 
-  useEffect(() => {
-    let desligar = () => undefined as void;
-    void ouvirEvento("niko://captura", () => useInterface.getState().abrirCaptura(true)).then((f) => (desligar = f));
-    return () => desligar();
-  }, []);
+  useEffect(() => ouvirNaJanela("niko://captura", () => useInterface.getState().abrirCaptura(true)), []);
+  useEffect(() => ouvirNaJanela(EVENTO_INSTALAR, () => void useAtualizacao.getState().instalar()), []);
 
   return (
     <div className="area-trabalho area-nativa">
@@ -80,8 +115,14 @@ export function AppIlha() {
   usarSincronia();
   return (
     <div className="area-sobreposta">
-      {PRINCIPAL && <Servicos />}
-      <Ilha />
+      {PRINCIPAL && (
+        <LimiteDeErro tipo="servicos">
+          <Servicos />
+        </LimiteDeErro>
+      )}
+      <LimiteDeErro tipo="sobreposta">
+        <Ilha />
+      </LimiteDeErro>
     </div>
   );
 }

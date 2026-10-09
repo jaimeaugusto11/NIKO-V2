@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::process::{Child, Command};
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -10,7 +10,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
-const PORTA: u16 = 47831;
+/// Porta preferida da ponte: os ganchos do Claude instalados no settings.json apontam para ela.
+const PORTA_PREFERIDA: u16 = 47831;
 pub(crate) const ALTURA_ILHA: f64 = 720.0;
 pub(crate) const ALTURA_DOCK: f64 = 250.0;
 
@@ -26,6 +27,15 @@ struct Estado {
     areas: Mutex<HashMap<String, Vec<Retangulo>>>,
     token: String,
     ponte: Mutex<Option<Child>>,
+    porta: u16,
+}
+
+/// Escolhe a porta uma vez no arranque. Se a preferida estiver ocupada (outro programa, ponte órfã), usa uma livre.
+fn escolher_porta() -> u16 {
+    if std::net::TcpListener::bind(("127.0.0.1", PORTA_PREFERIDA)).is_ok() {
+        return PORTA_PREFERIDA;
+    }
+    std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|l| l.local_addr()).map(|a| a.port()).unwrap_or(PORTA_PREFERIDA)
 }
 
 fn gerar_token() -> String {
@@ -49,8 +59,8 @@ fn token_ponte(estado: tauri::State<Estado>) -> String {
 }
 
 #[tauri::command]
-fn porta_ponte() -> u16 {
-    PORTA
+fn porta_ponte(estado: tauri::State<Estado>) -> u16 {
+    estado.porta
 }
 
 #[tauri::command]
@@ -58,18 +68,8 @@ fn mostrar_sistema(app: AppHandle) {
     mostrar(&app);
 }
 
+/// Última janela da frente que não é uma sobreposta; atualizada pelo vigia do cursor.
 static ULTIMA_FRENTE: AtomicIsize = AtomicIsize::new(0);
-
-fn registrar_frente(app: &AppHandle) {
-    let frente = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }.0 as isize;
-    if frente == 0 {
-        return;
-    }
-    let sobreposta = super::monitores::sobrepostas(app).iter().any(|j| j.hwnd().map(|h| h.0 as isize == frente).unwrap_or(false));
-    if !sobreposta {
-        ULTIMA_FRENTE.store(frente, Ordering::Relaxed);
-    }
-}
 
 #[tauri::command]
 fn alternar_sistema(app: AppHandle) {
@@ -84,7 +84,7 @@ fn alternar_sistema(app: AppHandle) {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn abrir_link(url: String) -> Result<(), String> {
     let endereco = url.trim();
     if !(endereco.starts_with("https://") || endereco.starts_with("http://")) || endereco.chars().any(|c| c.is_whitespace() || c.is_control()) {
@@ -151,25 +151,72 @@ pub(crate) fn criar_sobreposta(app: &AppHandle, rotulo: &str, y: f64, x: f64, la
         .build()
 }
 
+/// Muda sempre que uma sobreposta é destruída, para o vigia do cursor refazer a lista de janelas na hora.
+static GERACAO_DAS_SOBREPOSTAS: AtomicUsize = AtomicUsize::new(0);
+
+/// Chamado antes de destruir uma sobreposta: esquece a área interativa dela (uma recriada com o mesmo rótulo começa limpa).
+pub(crate) fn esquecer_sobreposta(app: &AppHandle, rotulo: &str) {
+    if let Ok(mut areas) = app.state::<Estado>().areas.lock() {
+        areas.remove(rotulo);
+    }
+    GERACAO_DAS_SOBREPOSTAS.fetch_add(1, Ordering::SeqCst);
+}
+
+const INTERVALO_DO_CURSOR: Duration = Duration::from_millis(45);
+/// A lista de sobrepostas (que passa pela thread principal) só é refeita de tempos a tempos.
+const VOLTAS_ATE_REFAZER_LISTA: u32 = 22;
+
 fn vigiar_cursor(app: AppHandle) {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetForegroundWindow, GetWindowRect};
+
     std::thread::spawn(move || {
         let mut fora: HashMap<String, bool> = HashMap::new();
+        let mut janelas: Vec<(WebviewWindow, isize)> = Vec::new();
+        let mut voltas = 0u32;
+        let mut geracao = usize::MAX;
         loop {
-            std::thread::sleep(Duration::from_millis(45));
-            registrar_frente(&app);
+            std::thread::sleep(INTERVALO_DO_CURSOR);
+            if ENCERRANDO.load(Ordering::Relaxed) {
+                return;
+            }
+            // Ler cursor e retângulos por Win32 não acorda a thread principal; os métodos das janelas Tauri acordam.
+            let geracao_atual = GERACAO_DAS_SOBREPOSTAS.load(Ordering::SeqCst);
+            if voltas.is_multiple_of(VOLTAS_ATE_REFAZER_LISTA) || geracao != geracao_atual {
+                geracao = geracao_atual;
+                janelas = super::monitores::sobrepostas(&app).into_iter().filter_map(|j| j.hwnd().ok().map(|h| (j, h.0 as isize))).collect();
+                fora.retain(|rotulo, _| janelas.iter().any(|(j, _)| j.label() == rotulo));
+            }
+            voltas = voltas.wrapping_add(1);
+
+            let frente = unsafe { GetForegroundWindow() }.0 as isize;
+            if frente != 0 && !janelas.iter().any(|(_, h)| *h == frente) {
+                ULTIMA_FRENTE.store(frente, Ordering::Relaxed);
+            }
+
+            let mut cursor = POINT::default();
+            if unsafe { GetCursorPos(&mut cursor) }.is_err() {
+                continue;
+            }
             let areas = match app.state::<Estado>().areas.lock() {
                 Ok(a) => a.clone(),
                 Err(_) => continue,
             };
-            for janela in super::monitores::sobrepostas(&app) {
+            for (janela, hwnd) in &janelas {
+                let hwnd = HWND(*hwnd as *mut core::ffi::c_void);
+                let mut retangulo = RECT::default();
+                if unsafe { GetWindowRect(hwnd, &mut retangulo) }.is_err() {
+                    continue;
+                }
+                let dpi = unsafe { GetDpiForWindow(hwnd) };
+                let escala = if dpi == 0 { 1.0 } else { dpi as f64 / 96.0 };
                 let rotulo = janela.label();
-                let (Ok(cursor), Ok(origem), Ok(escala)) = (janela.cursor_position(), janela.outer_position(), janela.scale_factor()) else { continue };
-                let x = (cursor.x - origem.x as f64) / escala;
-                let y = (cursor.y - origem.y as f64) / escala;
+                let x = (cursor.x - retangulo.left) as f64 / escala;
+                let y = (cursor.y - retangulo.top) as f64 / escala;
                 let dentro = areas.get(rotulo).map(|lista| lista.iter().any(|r| x >= r.x - 4.0 && x <= r.x + r.w + 4.0 && y >= r.y - 4.0 && y <= r.y + r.h + 4.0)).unwrap_or(false);
-                let estava_fora = *fora.get(rotulo).unwrap_or(&false);
                 let agora_fora = !dentro;
-                if !fora.contains_key(rotulo) || estava_fora != agora_fora {
+                if fora.get(rotulo) != Some(&agora_fora) {
                     let _ = janela.set_ignore_cursor_events(agora_fora);
                     if agora_fora {
                         let _ = janela.emit_to(rotulo, "niko://cursor-fora", ());
@@ -223,7 +270,7 @@ fn iniciar_ponte(app: &AppHandle, token: &str, reinicio: bool) {
             comando.stderr(std::process::Stdio::null());
         }
     }
-    comando.arg("ponte.mjs").env("NIKO_PORTA", PORTA.to_string()).env("NIKO_TOKEN", token).env("NIKO_PAI", std::process::id().to_string()).env("NIKO_ENCERRAR_PELO_STDIN", "1");
+    comando.arg("ponte.mjs").env("NIKO_PORTA", app.state::<Estado>().porta.to_string()).env("NIKO_TOKEN", token).env("NIKO_PAI", std::process::id().to_string()).env("NIKO_ENCERRAR_PELO_STDIN", "1");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -233,6 +280,13 @@ fn iniciar_ponte(app: &AppHandle, token: &str, reinicio: bool) {
         Ok(filho) => {
             registrar(format!("ponte iniciada: {} {} (pid {})", node.display(), script.display(), filho.id()));
             if let Ok(mut ponte) = app.state::<Estado>().ponte.lock() {
+                // O Niko pode ter começado a fechar enquanto esta ponte arrancava: ninguém a pararia depois.
+                if ENCERRANDO.load(Ordering::Relaxed) {
+                    let mut filho = filho;
+                    drop(filho.stdin.take());
+                    let _ = filho.kill();
+                    return;
+                }
                 *ponte = Some(filho);
             }
         }
@@ -277,26 +331,69 @@ pub(crate) fn encerrando() -> bool {
     ENCERRANDO.load(Ordering::Relaxed)
 }
 const MAXIMO_REINICIOS_DA_PONTE: u32 = 5;
+/// Depois de muitas quedas seguidas a ponte espera este tempo antes de voltar a tentar, em vez de desistir.
+const PAUSA_APOS_MUITAS_QUEDAS: Duration = Duration::from_secs(60);
+/// Falhas seguidas no teste de saúde (a cada ~9 s) antes de matar uma ponte viva mas presa.
+const FALHAS_DE_SAUDE_PARA_REINICIAR: u32 = 3;
+
+/// Pede GET /ponte/estado com prazo curto: o processo pode estar vivo mas com o event loop preso.
+fn ponte_responde(porta: u16, token: &str) -> bool {
+    use std::io::{Read, Write};
+    let endereco = std::net::SocketAddr::from(([127, 0, 0, 1], porta));
+    let Ok(mut conexao) = std::net::TcpStream::connect_timeout(&endereco, Duration::from_secs(2)) else { return false };
+    let _ = conexao.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = conexao.set_write_timeout(Some(Duration::from_secs(2)));
+    let pedido = format!("GET /ponte/estado HTTP/1.1\r\nHost: 127.0.0.1:{porta}\r\nx-niko: 1\r\nx-niko-token: {token}\r\nConnection: close\r\n\r\n");
+    if conexao.write_all(pedido.as_bytes()).is_err() {
+        return false;
+    }
+    let mut inicio = [0u8; 12];
+    conexao.read_exact(&mut inicio).is_ok() && inicio.starts_with(b"HTTP/1.1 200")
+}
 
 fn vigiar_ponte(app: AppHandle, token: String) {
     if cfg!(debug_assertions) {
         return;
     }
     std::thread::spawn(move || {
+        let porta = app.state::<Estado>().porta;
         let mut reinicios = 0u32;
+        let mut falhas_de_saude = 0u32;
+        let mut voltas = 0u32;
         let mut estavel_desde = std::time::Instant::now();
         loop {
             std::thread::sleep(Duration::from_secs(3));
             if ENCERRANDO.load(Ordering::Relaxed) {
                 return;
             }
+            voltas = voltas.wrapping_add(1);
             let caiu = match app.state::<Estado>().ponte.lock() {
                 Ok(mut ponte) => match ponte.as_mut() {
                     Some(filho) => matches!(filho.try_wait(), Ok(Some(_))),
-                    None => false,
+                    // Sem processo: o primeiro arranque falhou (antivírus, ficheiro em atualização) e tem de ser repetido.
+                    None => true,
                 },
                 Err(_) => false,
             };
+            // Só testa a saúde depois de a ponte ter tido tempo de abrir a porta.
+            if !caiu && voltas.is_multiple_of(3) && estavel_desde.elapsed() > Duration::from_secs(15) {
+                if ponte_responde(porta, &token) {
+                    falhas_de_saude = 0;
+                } else {
+                    falhas_de_saude += 1;
+                    if falhas_de_saude >= FALHAS_DE_SAUDE_PARA_REINICIAR {
+                        registrar_log(&app, "a ponte deixou de responder e será reiniciada", true);
+                        falhas_de_saude = 0;
+                        if let Ok(mut ponte) = app.state::<Estado>().ponte.lock() {
+                            if let Some(mut filho) = ponte.take() {
+                                let _ = filho.kill();
+                                let _ = filho.wait();
+                            }
+                        }
+                        continue;
+                    }
+                }
+            }
             if !caiu {
                 if estavel_desde.elapsed() > Duration::from_secs(120) {
                     reinicios = 0;
@@ -304,8 +401,9 @@ fn vigiar_ponte(app: AppHandle, token: String) {
                 continue;
             }
             if reinicios >= MAXIMO_REINICIOS_DA_PONTE {
-                registrar_log(&app, "a ponte caiu muitas vezes seguidas e não será reiniciada", true);
-                return;
+                registrar_log(&app, "a ponte caiu muitas vezes seguidas; nova tentativa daqui a 60 s", true);
+                std::thread::sleep(PAUSA_APOS_MUITAS_QUEDAS);
+                reinicios = 0;
             }
             reinicios += 1;
             std::thread::sleep(Duration::from_secs(u64::from(reinicios) * 2));
@@ -314,16 +412,43 @@ fn vigiar_ponte(app: AppHandle, token: String) {
             }
             iniciar_ponte(&app, &token, true);
             estavel_desde = std::time::Instant::now();
+            falhas_de_saude = 0;
         }
     });
 }
 
+/// Com windows_subsystem = "windows" uma falha no arranque seria silenciosa; regista e avisa o utilizador.
+fn falhar_no_arranque(erro: &str) -> ! {
+    if let Some(pasta) = std::env::var_os("APPDATA").map(|a| std::path::PathBuf::from(a).join("com.niko.desktop")) {
+        let _ = std::fs::create_dir_all(&pasta);
+        let _ = std::fs::write(pasta.join("falha-arranque.log"), erro);
+    }
+    super::barra_windows::mostrar_barras_agora();
+    let texto = windows::core::HSTRING::from(format!("O Niko não conseguiu iniciar.\n\n{erro}\n\nSe o problema continuar, reinstale o Microsoft Edge WebView2."));
+    unsafe {
+        windows::Win32::UI::WindowsAndMessaging::MessageBoxW(None, &texto, windows::core::w!("Niko"), windows::Win32::UI::WindowsAndMessaging::MB_ICONERROR);
+    }
+    std::process::exit(1);
+}
+
 pub fn run() {
+    // Com panic = "abort" o RunEvent::Exit não chega; a barra do Windows tem de voltar mesmo assim.
+    let aviso_padrao = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        super::barra_windows::mostrar_barras_agora();
+        aviso_padrao(info);
+    }));
+
     let token = gerar_token();
     let escondido = std::env::args().any(|a| a == "--escondido");
 
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| mostrar(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Um segundo arranque automático (--escondido) não deve abrir a janela por cima do que o utilizador faz.
+            if !args.iter().any(|a| a == "--escondido") {
+                mostrar(app);
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
@@ -338,7 +463,7 @@ pub fn run() {
                 })
                 .build(),
         )
-        .manage(Estado { areas: Mutex::new(HashMap::new()), token: token.clone(), ponte: Mutex::new(None) })
+        .manage(Estado { areas: Mutex::new(HashMap::new()), token: token.clone(), ponte: Mutex::new(None), porta: escolher_porta() })
         .manage(super::miniaturas::Miniaturas::default())
         .invoke_handler(tauri::generate_handler![
             area_interativa,
@@ -356,11 +481,12 @@ pub fn run() {
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
-            super::barra_windows::restaurar(&handle);
+            super::barra_windows::retomar(&handle);
             iniciar_ponte(&handle, &token, false);
             vigiar_ponte(handle.clone(), token.clone());
 
-            let monitor = app.primary_monitor()?.or(app.available_monitors()?.into_iter().next());
+            // Sem ecrã no arranque (RDP, monitor a acordar) usa um tamanho padrão em vez de falhar.
+            let monitor = app.primary_monitor().ok().flatten().or_else(|| app.available_monitors().ok()?.into_iter().next());
             let (mw, mh) = match &monitor {
                 Some(m) => {
                     let escala = m.scale_factor();
@@ -391,6 +517,7 @@ pub fn run() {
             super::monitores::sincronizar(&handle);
             vigiar_cursor(handle.clone());
             super::monitores::vigiar(handle.clone());
+            super::sessao_windows::vigiar(handle.clone());
 
             let abrir = MenuItem::with_id(app, "abrir", "Abrir o Niko", true, None::<&str>)?;
             let sair_item = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
@@ -416,7 +543,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("falha ao iniciar o Niko");
+        .unwrap_or_else(|erro| falhar_no_arranque(&erro.to_string()));
 
     app.run(|handle, evento| {
         if let RunEvent::Exit = evento {

@@ -23,6 +23,8 @@ const cache = new Map<string, string>();
 const pendentes = new Map<string, string | null>();
 const emEnvio = new Map<string, number>();
 const escritaLocal = new Map<string, number>();
+// Valores recebidos de outra janela ou do telemóvel; uma leitura da ponte mais antiga não os pode repor.
+const recebidoEm = new Map<string, number>();
 // Última versão de cada chave que esta janela sabe ser comum com as outras; é a base das fusões.
 const sincronizado = new Map<string, string | null>();
 const alteradoEm = new Map<string, number>();
@@ -46,6 +48,12 @@ function tauriDisponivel(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+function janelaSobreposta(): boolean {
+  if (!tauriDisponivel()) return false;
+  const rotulo = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } }).__TAURI_INTERNALS__?.metadata?.currentWindow?.label ?? "sistema";
+  return rotulo.startsWith("ilha") || rotulo.startsWith("dock");
+}
+
 function avisarOutrasJanelas(chave: string, valor: string | null) {
   canal?.postMessage({ origem: ORIGEM, chave, valor } satisfies MudancaDeDados);
   if (!tauriDisponivel()) return;
@@ -66,6 +74,7 @@ function avisarOutrasJanelas(chave: string, valor: string | null) {
 
 function receberDeFora(m: MudancaDeDados) {
   if (!m || m.origem === ORIGEM) return;
+  if (m.origem !== "ponte") recebidoEm.set(m.chave, ++relogioLocal);
   const alteradaAqui = pendentes.has(m.chave) || emEnvio.has(m.chave);
   if (alteradaAqui) {
     if (m.origem !== "ponte") fundirComOutraJanela(m);
@@ -117,7 +126,7 @@ async function recarregarDaPonte() {
     const { dados } = (await r.json()) as { dados: Record<string, string> };
     for (const [k, v] of Object.entries(dados)) {
       // A leitura pode ter saído antes de uma escrita local chegar ao banco; nesse caso o valor local é mais novo.
-      if (emEnvio.has(k) || (escritaLocal.get(k) ?? 0) > marco) continue;
+      if (emEnvio.has(k) || Math.max(escritaLocal.get(k) ?? 0, recebidoEm.get(k) ?? 0) > marco) continue;
       receberDeFora({ origem: "ponte", chave: k, valor: v });
     }
   } catch {
@@ -248,18 +257,27 @@ export async function iniciarArmazenamento(): Promise<ModoArmazenamento> {
       await enviarPendentes();
       if (pendentes.size === 0) localSeguro(() => localStorage.setItem(`${PREFIXO}migrado`, new Date().toISOString()), undefined);
     }
-    canal?.addEventListener("message", (e: MessageEvent<MudancaDeDados>) => receberDeFora(e.data));
-    if (tauriDisponivel()) {
-      const { listen } = await import("@tauri-apps/api/event");
-      await listen<MudancaDeDados>(EVENTO_DADOS, (e) => receberDeFora(e.payload));
-      await listen("niko://saindo", () => void enviarPendentes());
+    if (!ouvintesLigados) {
+      ouvintesLigados = true;
+      canal?.addEventListener("message", (e: MessageEvent<MudancaDeDados>) => receberDeFora(e.data));
+      if (tauriDisponivel()) {
+        const { listen } = await import("@tauri-apps/api/event");
+        await listen<MudancaDeDados>(EVENTO_DADOS, (e) => receberDeFora(e.payload));
+        await listen("niko://saindo", () => void enviarPendentes());
+        await listen(EVENTO_RECARREGAR, () => {
+          travado = true;
+          window.location.reload();
+        });
+      }
+      // A ilha e o dock recebem tudo pelo canal; só a janela principal relê a ponte ao ganhar foco.
+      const sobreposta = janelaSobreposta();
+      if (!sobreposta) window.addEventListener("focus", () => void recarregarDaPonte());
+      window.addEventListener("pagehide", () => void enviarPendentes(true));
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") void enviarPendentes(true);
+        else if (!sobreposta) void recarregarDaPonte();
+      });
     }
-    window.addEventListener("focus", () => void recarregarDaPonte());
-    window.addEventListener("pagehide", () => void enviarPendentes(true));
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") void enviarPendentes(true);
-      else void recarregarDaPonte();
-    });
   } catch {
     modo = "local";
   }
@@ -272,6 +290,8 @@ export function aoMudarDeFora(fn: (chave: string) => void): () => void {
 }
 
 let travado = false;
+let ouvintesLigados = false;
+const EVENTO_RECARREGAR = "niko://recarregar";
 
 export async function zerarTudo(apagarChaves: boolean): Promise<void> {
   travado = true;
@@ -287,6 +307,15 @@ export async function zerarTudo(apagarChaves: boolean): Promise<void> {
   }
   for (const k of chavesLocais()) if (k !== `${PREFIXO}migrado`) localSeguro(() => localStorage.removeItem(k), undefined);
   localSeguro(() => localStorage.setItem(`${PREFIXO}migrado`, new Date().toISOString()), undefined);
+  // As outras janelas ainda têm os dados antigos em memória; sem recarregar voltariam a gravá-los.
+  if (tauriDisponivel()) {
+    try {
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit(EVENTO_RECARREGAR);
+    } catch {
+      return;
+    }
+  }
 }
 
 export function salvarAgora(): Promise<void> {
@@ -328,7 +357,10 @@ export function momentoDaChave(nome: string): number {
 /** Aplica um valor vindo de outro aparelho e avisa as lojas para relerem. */
 export function aplicarRemoto(nome: string, valor: string) {
   if (modo !== "banco") localSeguro(() => localStorage.setItem(nome, valor), undefined);
-  receberDeFora({ origem: "ponte", chave: nome, valor });
+  // Com uma edição local a caminho, receberDeFora funde em vez de a perder, e a fusão já avisa as outras janelas.
+  const editadaAqui = pendentes.has(nome) || emEnvio.has(nome);
+  receberDeFora({ origem: "remoto", chave: nome, valor });
+  if (!editadaAqui) avisarOutrasJanelas(nome, valor);
 }
 
 export function apagarChave(nome: string) {

@@ -8,6 +8,8 @@ const MENSAGENS_POR_PAGINA = 50;
 const LIMITE_DO_TEXTO = 4000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
+const TEMPO_DA_REDE_MS = 15_000;
+const TEMPO_DA_RESTAURACAO_MS = 45_000;
 
 export interface MensagemSocial {
   id: string;
@@ -71,7 +73,10 @@ function desligarTempoReal() {
 function obterCliente(): SupabaseClient {
   if (!socialConfigurado()) throw new Error("social_nao_configurado");
   if (cliente) return cliente;
-  const novo = createClient(SUPABASE_URL, SUPABASE_CHAVE_PUBLICA, { auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false } });
+  const novo = createClient(SUPABASE_URL, SUPABASE_CHAVE_PUBLICA, {
+    auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false },
+    global: { fetch: fetchComPrazo },
+  });
   novo.auth.onAuthStateChange((evento, sessao) => {
     void guardarSessao(evento === "SIGNED_OUT" ? null : sessao);
     if (sessao) ligarTempoReal(novo);
@@ -80,6 +85,12 @@ function obterCliente(): SupabaseClient {
   });
   cliente = novo;
   return novo;
+}
+
+/** Sem prazo, um pedido pendurado deixava a sessão (e a sincronia) presa para sempre. */
+function fetchComPrazo(entrada: RequestInfo | URL, opcoes: RequestInit = {}) {
+  const prazo = AbortSignal.timeout(TEMPO_DA_REDE_MS);
+  return fetch(entrada, { ...opcoes, signal: opcoes.signal ? AbortSignal.any([opcoes.signal, prazo]) : prazo });
 }
 
 async function restaurarSessao(supabase: SupabaseClient) {
@@ -94,9 +105,19 @@ async function restaurarSessao(supabase: SupabaseClient) {
 
 async function comSessao(): Promise<SupabaseClient> {
   const supabase = obterCliente();
-  restauracao ??= restaurarSessao(supabase).finally(() => {
-    restauracao = null;
-  });
+  if (!restauracao) {
+    let relogio: NodeJS.Timeout | undefined;
+    const atual: Promise<void> = Promise.race([
+      restaurarSessao(supabase),
+      new Promise<never>((_, rejeitar) => {
+        relogio = setTimeout(() => rejeitar(new Error("sessao_demorou")), TEMPO_DA_RESTAURACAO_MS);
+      }),
+    ]).finally(() => {
+      clearTimeout(relogio);
+      if (restauracao === atual) restauracao = null;
+    });
+    restauracao = atual;
+  }
   await restauracao;
   return supabase;
 }
